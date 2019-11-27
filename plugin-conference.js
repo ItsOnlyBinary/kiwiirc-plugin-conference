@@ -3,6 +3,7 @@
 /* eslint-disable no-restricted-globals */
 /* eslint-disable no-extend-native */
 import platform from 'platform';
+import AwayStatusIndicator from './AwayStatusIndicator.vue';
 const regeneratorRuntime = require("regenerator-runtime");
 
 if (platform.name === 'IE') {
@@ -64,6 +65,7 @@ kiwi.plugin('conferencePlugin', (kiwi, log) => { /* eslint-disable-line no-undef
     let joinText = '';
     let joinButtonText = '';
     let disabledText = '';
+    let inConference = '';
     let showLink = '';
     let useLinkShortener = '';
     let linkShortenerURL = '';
@@ -98,6 +100,14 @@ kiwi.plugin('conferencePlugin', (kiwi, log) => { /* eslint-disable-line no-undef
     } else {
         disabledText = 'Sorry. The sysop has not enabled conferences in this channel.';
     }
+
+    if (kiwi.state.setting('conference.inConference')) {
+        inConference = kiwi.state.setting('conference.inConference');
+    } else {
+        inConference = 'conferencing in'
+    }
+    // nasty hack so can get this string in AwayStatusIndicator
+    kiwi.inConferenceText = inConference;
 
     if (kiwi.state.setting('conference.showLink')) {
         showLink = kiwi.state.setting('conference.showLink');
@@ -187,6 +197,24 @@ kiwi.plugin('conferencePlugin', (kiwi, log) => { /* eslint-disable-line no-undef
              sharedData,
            }
         }
+    });
+
+    kiwi.replaceModule('components/AwayStatusIndicator', AwayStatusIndicator);
+
+    kiwi.on('irc.wholist', (event, network) => {
+        event.users.forEach((user) => {
+            if (!user.away) {
+                return;
+            }
+            network.ircClient.whois(user.nick);
+        });
+    });
+
+    kiwi.on('irc.away', (event, network) => {
+        if (!event.self) {
+            return;
+        }
+        network.ircClient.whois(event.nick);
     });
 
     kiwi.on('message.new', (newMessage, buffer) => {
@@ -313,12 +341,14 @@ kiwi.plugin('conferencePlugin', (kiwi, log) => { /* eslint-disable-line no-undef
             nicks.sort();
             nicks[0] = 'query-' + nicks[0] + '#';
             roomName = nicks.join('');
-            
+
             m = new network.ircClient.Message('PRIVMSG', buffer.name, '* ' + network.nick + ' ' + inviteText + ' ' + await shareLink());
         } else {
             roomName = buffer.name;
             if (enabledInChannels.indexOf('*') !== -1 || enabledInChannels.indexOf(roomName) !== -1) {
                 m = new network.ircClient.Message('PRIVMSG', buffer.name, '* ' + network.nick + ' ' + joinText + ' ' + await shareLink());
+                // dont send this if the channel is private/secret to prevent privacy breach?
+                network.ircClient.raw('AWAY', inConference + ' ' + roomName);
             } else {
                 hideCams(false);
                 alert(disabledText); // eslint-disable-line no-alert
@@ -420,6 +450,8 @@ kiwi.plugin('conferencePlugin', (kiwi, log) => { /* eslint-disable-line no-undef
             api = null;
         }
         kiwi.emit('mediaviewer.hide');
+        let network = kiwi.state.getActiveNetwork();
+        network.ircClient.raw('AWAY', '');
     }
 
     // To cover special characters in channel and query names, encode the complete name
