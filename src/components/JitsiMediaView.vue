@@ -110,7 +110,9 @@ export default {
                 configOverwrite: configOverwrite,
                 interfaceConfigOverwrite: config.setting('interfaceConfigOverwrite'),
                 onload: () => {
-                    this.api.executeCommand('displayName', this.network.nick);
+                    const currentUser = this.network.currentUser();
+                    this.api.executeCommand('displayName', currentUser.nick);
+                    this.api.executeCommand('avatarUrl', currentUser.avatar.large);
                     this.api.executeCommand('subject', ' ');
                     this.api.once('videoConferenceJoined', () => {
                         this.loadingAnimationStop();
