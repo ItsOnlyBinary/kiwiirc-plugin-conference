@@ -87,14 +87,14 @@ kiwi.plugin('conference', (kiwi) => {
             return;
         }
 
-        let inviteState = kiwi.Vue.observable({
+        let inviteState = reactive({
             members: [message.nick],
             timeout: Date.now(),
         });
 
         activeInviteStates[buffer.name.toUpperCase()] = inviteState;
 
-        message.template = kiwi.Vue.extend(MessageTemplate);
+        message.template = MessageTemplate;
         message.templateProps = {
             inviteState,
             pluginState,
