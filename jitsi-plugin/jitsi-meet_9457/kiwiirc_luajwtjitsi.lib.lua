@@ -243,14 +243,22 @@ function M.verify(token, expectedAlgo, key, acceptedIssuers, acceptedAudiences)
     end
 	end
 
-	if acceptedAudiences ~= nil then
-		local audClaim = body.aud;
-		if audClaim == nil then
-        return nil, "'aud' claim is missing";
-    end
-    if not verify_claim(audClaim, acceptedAudiences) then
-        return nil, "invalid 'aud' claim";
-    end
+	-- if acceptedAudiences ~= nil then
+	-- 	local audClaim = body.aud;
+	-- 	if audClaim == nil then
+    --     return nil, "'aud' claim is missing";
+    -- end
+    -- if not verify_claim(audClaim, acceptedAudiences) then
+    --     return nil, "invalid 'aud' claim";
+    -- end
+	-- end
+
+	if body.sub == nil then
+		return nil, "'sub' claim is missing";
+	end
+
+	if body.channel == nil then
+		return nil, "'channel' claim is missing";
 	end
 
 	return body

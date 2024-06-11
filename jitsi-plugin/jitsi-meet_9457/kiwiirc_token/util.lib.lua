@@ -4,7 +4,7 @@
 local basexx = require "basexx";
 local have_async, async = pcall(require, "util.async");
 local hex = require "util.hex";
-local jwt = module:require "luajwtjitsi";
+local jwt = module:require "kiwiirc_luajwtjitsi";
 local jid = require "util.jid";
 local json_safe = require "cjson.safe";
 local path = require "util.paths";
@@ -123,7 +123,6 @@ function Util.new(module)
         self.cachedKeys = {};
         local update_keys_cache;
         update_keys_cache = async.runner(function (name)
-            local content, code, cache_for;
             content, code, cache_for = http_get_with_retry(self.cacheKeysUrl, nr_retries);
             if content ~= nil then
                 local keys_to_delete = table_shallow_copy(self.cachedKeys);
@@ -297,16 +296,31 @@ function Util:process_and_verify_token(session, acceptedIssuers)
     )
     if claims ~= nil then
         if self.requireRoomClaim then
-            local roomClaim = claims["room"];
-            if roomClaim == nil then
-                return false, "'room' claim is missing";
-            end
+            local roomClaim = claims["channel"];
+            local encRoom = claims["iss"] .. "/" .. roomClaim;
+            claims["room"] = encRoom:gsub('.', function (c) return string.format('%02X', string.byte(c)) end):lower();
+            module:log("warn", "room encoded from '%s' to '%s'", encRoom, claims.room);
+        end
+
+        local joined = claims["joined"];
+        if joined <= 0 then
+            return false, "not-allowed", "user is not member of the channel";
         end
 
         -- Binds room name to the session which is later checked on MUC join
         session.jitsi_meet_room = claims["room"];
         -- Binds domain name to the session
-        session.jitsi_meet_domain = claims["sub"];
+        session.jitsi_meet_domain = "jitsi.meet";
+
+        session.jitsi_meet_joined = claims["joined"];
+        session.jitsi_meet_issuer = claims["iss"];
+
+        session.jitsi_meet_affiliation = get_kiwiirc_affiliation(claims);
+        module:log("warn", "token affiliation: '%s' for %s ", session.jitsi_meet_affiliation, claims.sub);
+
+        claims["context"] = {};
+        claims["context"]["user"] = {};
+        claims["context"]["user"]["name"] = claims["sub"];
 
         -- Binds the user details to the session if available
         if claims["context"] ~= nil then
@@ -477,6 +491,59 @@ function Util:verify_room(session, room_address)
         -- verify with info from the token
         return room_address_to_verify == jid.join(room_to_check, subdomain_to_check);
     end
+end
+
+function get_kiwiirc_affiliation(claims)
+    local allMod = get_kiwiirc_env("KIWIIRC_EVERYONE_MODERATOR");
+
+    if allMod then
+        return "admin";
+    end
+
+    -- Possible values for affiliation are "owner", "admin", "member", "outcast" (banned) and "none" (no affiliation).
+    local affiliation = "none";
+
+    if claims.umodes ~= nil and array_contains(claims.umodes, "o") then
+        -- network operator
+        return "owner"
+    end
+
+    if claims.cmodes ~= nil then
+        local channelOwner = get_kiwiirc_env("KIWIIRC_DISABLE_OWNER_MODERATOR");
+        if not channelOwner and array_contains(claims.cmodes, "q") then return "owner" end
+
+        local op = get_kiwiirc_env("KIWIIRC_DISABLE_OP_MODERATOR");
+        if not op and array_contains(claims.cmodes, "o") then return "owner" end
+
+        local halfop = get_kiwiirc_env("KIWIIRC_DISABLE_HALFOP_MODERATOR");
+        if not halfop and array_contains(claims.cmodes, "h") then return "owner" end
+
+        if array_contains(claims.cmodes, "v") then return "member" end
+
+        local enableNoMode = get_kiwiirc_env("KIWIIRC_ENABLE_NO_MODE_MEMBER");
+        if enableNoMode then return "memeber" end
+    end
+
+    return affiliation;
+end
+
+function get_kiwiirc_env(key)
+    local value = os.getenv(key);
+
+    if value ~= nil and value ~= "false" and value ~= "0" then
+        return true;
+    end
+
+    return false;
+end
+
+function array_contains(array, element)
+    for _, value in ipairs(array) do
+        if value == element then
+            return true
+        end
+    end
+    return false
 end
 
 return Util;

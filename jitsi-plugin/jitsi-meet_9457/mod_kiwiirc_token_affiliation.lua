@@ -22,32 +22,21 @@ module:hook("muc-occupant-joined", function (event)
         return
     end
 
-    local affiliation = "member"
-    local context_user = event.origin.jitsi_meet_context_user
+    local affiliation = event.origin.jitsi_meet_affiliation;
 
-    if context_user then
-        if context_user["affiliation"] == "owner" then
-            affiliation = "owner"
-        elseif context_user["affiliation"] == "moderator" then
-            affiliation = "owner"
-        elseif context_user["affiliation"] == "teacher" then
-            affiliation = "owner"
-        elseif context_user["moderator"] == "true" then
-            affiliation = "owner"
-        elseif context_user["moderator"] == true then
-            affiliation = "owner"
-        end
+    if affiliation == nil then
+        return;
     end
 
     local i = 0
     local function setAffiliation()
         room:set_affiliation(true, occupant.bare_jid, affiliation)
-        if i > 8 then return end
+        if i > 3 then return end
 
         i = i + 1
         timer.add_task(0.2 * i, setAffiliation)
     end
     setAffiliation()
 
-    module:log(LOGLEVEL, "affiliation: %s", affiliation)
+    module:log("warn", "setting affiliation: '%s' for %s", room:get_affiliation(occupant.jid), occupant.jid)
 end)
