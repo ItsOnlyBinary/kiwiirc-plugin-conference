@@ -20,6 +20,8 @@ local timer = require "util.timer";
 local async = require "util.async";
 local inspect = require 'inspect';
 
+local kiwi_util = module:require "kiwiirc_util";
+
 local nr_retries = 3;
 local ssl = require "ssl";
 
@@ -315,7 +317,7 @@ function Util:process_and_verify_token(session, acceptedIssuers)
         session.jitsi_meet_joined = claims["joined"];
         session.jitsi_meet_issuer = claims["iss"];
 
-        session.jitsi_meet_affiliation = get_kiwiirc_affiliation(claims);
+        session.jitsi_meet_affiliation = kiwi_util.get_kiwiirc_affiliation(claims);
         module:log("warn", "token affiliation: '%s' for %s ", session.jitsi_meet_affiliation, claims.sub);
 
         claims["context"] = {};
@@ -491,59 +493,6 @@ function Util:verify_room(session, room_address)
         -- verify with info from the token
         return room_address_to_verify == jid.join(room_to_check, subdomain_to_check);
     end
-end
-
-function get_kiwiirc_affiliation(claims)
-    local allMod = get_kiwiirc_env("KIWIIRC_EVERYONE_MODERATOR");
-
-    if allMod then
-        return "admin";
-    end
-
-    -- Possible values for affiliation are "owner", "admin", "member", "outcast" (banned) and "none" (no affiliation).
-    local affiliation = "none";
-
-    if claims.umodes ~= nil and array_contains(claims.umodes, "o") then
-        -- network operator
-        return "owner"
-    end
-
-    if claims.cmodes ~= nil then
-        local channelOwner = get_kiwiirc_env("KIWIIRC_DISABLE_OWNER_MODERATOR");
-        if not channelOwner and array_contains(claims.cmodes, "q") then return "owner" end
-
-        local op = get_kiwiirc_env("KIWIIRC_DISABLE_OP_MODERATOR");
-        if not op and array_contains(claims.cmodes, "o") then return "owner" end
-
-        local halfop = get_kiwiirc_env("KIWIIRC_DISABLE_HALFOP_MODERATOR");
-        if not halfop and array_contains(claims.cmodes, "h") then return "owner" end
-
-        if array_contains(claims.cmodes, "v") then return "member" end
-
-        local enableNoMode = get_kiwiirc_env("KIWIIRC_ENABLE_NO_MODE_MEMBER");
-        if enableNoMode then return "memeber" end
-    end
-
-    return affiliation;
-end
-
-function get_kiwiirc_env(key)
-    local value = os.getenv(key);
-
-    if value ~= nil and value ~= "false" and value ~= "0" then
-        return true;
-    end
-
-    return false;
-end
-
-function array_contains(array, element)
-    for _, value in ipairs(array) do
-        if value == element then
-            return true
-        end
-    end
-    return false
 end
 
 return Util;
