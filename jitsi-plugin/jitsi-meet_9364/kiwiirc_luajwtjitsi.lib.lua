@@ -257,6 +257,10 @@ function M.verify(token, expectedAlgo, key, acceptedIssuers, acceptedAudiences)
 		return nil, "'sub' claim is missing";
 	end
 
+	if body.channel == nil then
+		return nil, "'channel' claim is missing";
+	end
+
 	return body
 end
 

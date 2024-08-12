@@ -6,6 +6,7 @@ local host = module.host;
 local st = require "util.stanza";
 local um_is_admin = require "core.usermanager".is_admin;
 
+module:log("info", "kiwiirc patch active: prosody-plugins/mod_kiwi_token_verification.lua");
 
 local function is_admin(jid)
     return um_is_admin(jid, host);
@@ -25,7 +26,7 @@ if parentCtx == nil then
 	return;
 end
 
-local token_util = module:require "token/util".new(parentCtx);
+local token_util = module:require "token/util_kiwi".new(parentCtx);
 
 -- no token configuration
 if token_util == nil then

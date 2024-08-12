@@ -7,7 +7,7 @@ local update_presence_identity = module:require "util".update_presence_identity;
 function on_message(event)
     if event and event["stanza"] then
       if event.origin and event.origin.jitsi_meet_context_user then
-
+          module:log("warn", "update_presence_identity");
           update_presence_identity(
               event.stanza,
               event.origin.jitsi_meet_context_user,

@@ -4,12 +4,12 @@
 local basexx = require "basexx";
 local have_async, async = pcall(require, "util.async");
 local hex = require "util.hex";
-local jwt = module:require "luajwtjitsi";
+local jwt = module:require "kiwiirc_luajwtjitsi";
 local jid = require "util.jid";
 local json_safe = require "cjson.safe";
 local path = require "util.paths";
 local sha256 = require "util.hashes".sha256;
-local main_util = module:require "util";
+local main_util = module:require "kiwiirc_util";
 local ends_with = main_util.ends_with;
 local http_get_with_retry = main_util.http_get_with_retry;
 local extract_subdomain = main_util.extract_subdomain;
@@ -296,16 +296,35 @@ function Util:process_and_verify_token(session, acceptedIssuers)
     )
     if claims ~= nil then
         if self.requireRoomClaim then
-            local roomClaim = claims["room"];
+            local roomClaim = claims["channel"];
             if roomClaim == nil then
-                return false, "'room' claim is missing";
+                return false, "'channel' claim is missing";
             end
+
+            local encRoom = claims["iss"] .. "/" .. roomClaim;
+            claims["room"] = encRoom:gsub('.', function (c) return string.format('%02X', string.byte(c)) end):lower();
+            module:log("warn", "room encoded from " .. encRoom .. " as " .. claims.room);
+        end
+
+        local joined = claims["joined"];
+        if joined <= 0 then
+            return false, "user is not member of the channel";
         end
 
         -- Binds room name to the session which is later checked on MUC join
         session.jitsi_meet_room = claims["room"];
         -- Binds domain name to the session
-        session.jitsi_meet_domain = claims["sub"];
+        session.jitsi_meet_domain = "test.test";
+
+        session.jitsi_meet_joined = claims["joined"];
+        session.jitsi_meet_issuer = claims["iss"];
+
+        session.jitsi_meet_affiliation = get_kiwiirc_affiliation(claims);
+        module:log("warn", "affiliation = '%s' for %s ", session.jitsi_meet_affiliation, claims.sub);
+
+        claims["context"] = {};
+        claims["context"]["user"] = {};
+        claims["context"]["user"]["name"] = claims["sub"];
 
         -- Binds the user details to the session if available
         if claims["context"] ~= nil then
@@ -476,6 +495,58 @@ function Util:verify_room(session, room_address)
         -- verify with info from the token
         return room_address_to_verify == jid.join(room_to_check, subdomain_to_check);
     end
+end
+
+function array_contains(array, element)
+    for _, value in ipairs(array) do
+        if value == element then
+            return true
+        end
+    end
+    return false
+end
+
+function get_kiwiirc_affiliation(claims)
+    local allMod = get_kiwiirc_env("KIWIIRC_EVERYONE_MODERATOR");
+
+    if allMod then
+        return "admin";
+    end
+
+    -- Possible values for affiliation are "owner", "admin", "member", "outcast" (banned) and "none" (no affiliation).
+    local affiliation = "none";
+
+    if claims.umodes ~= nil and array_contains(claims.umodes, "o") then
+        -- network operator
+        return "owner"
+    end
+
+    if claims.cmodes ~= nil then
+        local enableOwner = get_kiwiirc_env("KIWIIRC_ENABLE_CHANNEL_OWNER");
+        if enableOwner and array_contains(claims.cmodes, "q") then return "owner" end
+
+        if array_contains(claims.cmodes, "o") then return "admin" end
+
+        local halfop = get_kiwiirc_env("KIWIIRC_DISABLE_HALFOP_MODERATOR");
+        if not halfop and array_contains(claims.cmodes, "h") then return "admin" end
+
+        if array_contains(claims.cmodes, "v") then return "member" end
+
+        local enableNoMode = get_kiwiirc_env("KIWIIRC_ENABLE_NO_MODE_MEMBER");
+        if enableNoMode then return "memeber" end
+    end
+
+    return "member";
+end
+
+function get_kiwiirc_env(key)
+    local value = os.getenv(key);
+
+    if value ~= nil and value ~= "false" and value ~= "0" then
+        return true;
+    end
+
+    return false;
 end
 
 return Util;

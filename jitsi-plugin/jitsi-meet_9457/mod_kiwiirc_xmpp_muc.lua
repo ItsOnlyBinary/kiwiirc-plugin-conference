@@ -21,7 +21,7 @@ module:hook("muc-occupant-pre-join", function(event)
         return;
     end
 
-    local room, origin, stanza = event.room, event.origin, event.stanza;
+    local room, origin, stanza, session = event.room, event.origin, event.stanza, event.session;
     if not event.is_new_room then
         local affiliation = origin.jitsi_meet_affiliation;
         local participant_count = it.count(room:each_occupant());

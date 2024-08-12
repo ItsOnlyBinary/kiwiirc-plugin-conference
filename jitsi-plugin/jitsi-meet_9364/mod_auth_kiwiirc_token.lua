@@ -5,7 +5,7 @@ local formdecode = require "util.http".formdecode;
 local generate_uuid = require "util.uuid".generate;
 local new_sasl = require "util.sasl".new;
 local sasl = require "util.sasl";
-local token_util = module:require "token/util".new(module);
+local token_util = module:require "kiwiirc_token/util".new(module);
 local sessions = prosody.full_sessions;
 
 -- no token configuration

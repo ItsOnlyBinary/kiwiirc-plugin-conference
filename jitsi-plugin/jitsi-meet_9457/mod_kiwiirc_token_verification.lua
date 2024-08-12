@@ -78,14 +78,14 @@ local function verify_user(session, stanza)
     end
 
     if DEBUG then module:log("debug", "Will verify token for user: %s, room: %s ", user_jid, stanza.attr.to); end
-    -- if not token_util:verify_room(session, stanza.attr.to) then
-    --     module:log("error", "Token %s not allowed to join: %s",
-    --         tostring(session.auth_token), tostring(stanza.attr.to));
-    --     session.send(
-    --         st.error_reply(
-    --             stanza, "cancel", "not-allowed", "Room and token mismatched"));
-    --     return false; -- we need to just return non nil
-    -- end
+    if not token_util:verify_room(session, stanza.attr.to) then
+        module:log("error", "Token %s not allowed to join: %s",
+            tostring(session.auth_token), tostring(stanza.attr.to));
+        session.send(
+            st.error_reply(
+                stanza, "cancel", "not-allowed", "Room and token mismatched"));
+        return false; -- we need to just return non nil
+    end
     if DEBUG then module:log("debug", "allowed: %s to enter/create room: %s", user_jid, stanza.attr.to); end
     return true;
 end
@@ -112,9 +112,9 @@ end, 99);
 
 for event_name, method in pairs {
     -- Normal room interactions
-    ["iq-set/bare/http://jabber.org/protocol/muc#owner:query"] = "handle_owner_query_set_to_room" ;
+    -- ["iq-set/bare/http://jabber.org/protocol/muc#owner:query"] = "handle_owner_query_set_to_room" ;
     -- Host room
-    ["iq-set/host/http://jabber.org/protocol/muc#owner:query"] = "handle_owner_query_set_to_room" ;
+    -- ["iq-set/host/http://jabber.org/protocol/muc#owner:query"] = "handle_owner_query_set_to_room" ;
 } do
     module:hook(event_name, function (event)
         local session, stanza = event.origin, event.stanza;

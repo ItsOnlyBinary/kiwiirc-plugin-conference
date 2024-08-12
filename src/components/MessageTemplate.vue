@@ -61,13 +61,13 @@ export default {
 
 <style>
 .plugin-conference-join {
-    background: var(--brand-midtone);
     box-sizing: border-box;
+    width: 100%;
+    padding: 20px;
     font-size: 1.05em;
     line-height: 1.05em;
-    padding: 20px;
     text-align: center;
-    width: 100%;
+    background: var(--brand-midtone);
 }
 
 .plugin-conference-jointext {

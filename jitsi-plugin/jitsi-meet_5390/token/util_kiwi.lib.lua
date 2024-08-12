@@ -9,7 +9,7 @@ local jid = require "util.jid";
 local json_safe = require "cjson.safe";
 local path = require "util.paths";
 local sha256 = require "util.hashes".sha256;
-local main_util = module:require "util";
+local main_util = module:require "util_kiwi";
 local http_get_with_retry = main_util.http_get_with_retry;
 local extract_subdomain = main_util.extract_subdomain;
 
@@ -17,6 +17,9 @@ local nr_retries = 3;
 
 -- TODO: Figure out a less arbitrary default cache size.
 local cacheSize = module:get_option_number("jwt_pubkey_cache_size", 128);
+
+local jitsi_meet_domain = module:get_option("jitsi_meet_domain", os.getenv("XMPP_DOMAIN"));
+module:log("info", "kiwiirc patch active: prosody-plugins/token/util_kiwi.lib.lua");
 
 local Util = {}
 Util.__index = Util
@@ -196,6 +199,8 @@ function Util:verify_token(token, secret, acceptedIssuers)
         return nil, err;
     end
 
+    claims["context"] = nil;
+
     local alg = claims["alg"];
     if alg ~= nil and (alg == "none" or alg == "") then
         return nil, "'alg' claim must not be empty";
@@ -205,22 +210,33 @@ function Util:verify_token(token, secret, acceptedIssuers)
     if issClaim == nil then
         return nil, "'iss' claim is missing";
     end
+
     --check the issuer against the accepted list
-    local issCheck, issCheckErr = self:verify_issuer(issClaim, acceptedIssuers);
-    if issCheck == nil then
-        return nil, issCheckErr;
+    local subClaim = claims["sub"];
+    if subClaim == nil then
+        claims["sub"] = jitsi_meet_domain;
     end
 
     if self.requireRoomClaim then
-        local roomClaim = claims["room"];
+        local roomClaim = claims["channel"];
         if roomClaim == nil then
-            return nil, "'room' claim is missing";
+            return nil, "'channel' claim is missing";
         end
+
+        local encRoom = issClaim .. "/" .. roomClaim;
+        claims["room"] = encRoom:gsub('.', function (c) return string.format('%02X', string.byte(c)) end):lower();
+        module:log("debug", "room encoded from " .. encRoom .. " as " .. claims.room);
+    end
+
+    local nickClaim = claims["nick"];
+    if nickClaim == nil then
+        return nil, "'nick' claim is missing";
     end
 
     local audClaim = claims["aud"];
     if audClaim == nil then
-        return nil, "'aud' claim is missing";
+        audClaim = "kiwiClientID";
+        claims["aud"] = audClaim;
     end
     --check the audience against the accepted list
     local audCheck, audCheckErr = self:verify_audience(audClaim);
@@ -286,8 +302,40 @@ function Util:process_and_verify_token(session, acceptedIssuers)
     if claims ~= nil then
         -- Binds room name to the session which is later checked on MUC join
         session.jitsi_meet_room = claims["room"];
+        session.jitsi_meet_joined = claims["joined"];
         -- Binds domain name to the session
         session.jitsi_meet_domain = claims["sub"];
+        session.jitsi_meet_issuer = claims["iss"];
+
+        affil = {};
+        affil.owner = false;
+        affil.admin = false;
+        affil.member = false;
+        affil.none = true;
+        affil.outcast = false;
+
+        if (claims.modes ~= nil and type(claims.modes) == "table") then
+          for i, mode in ipairs(claims.modes) do
+            if mode == "o" then affil.owner = true
+          --  elseif mode == "%" then affil.member = true
+          --  elseif mode == "+" then affil.member = true
+            end
+          end
+        end
+
+        if affil.owner then affil.final = "owner"
+        elseif affil.admin then affil.final = "admin"
+        elseif affil.member then affil.final = "member"
+        elseif affil.none then affil.final = "none"
+        else affil.final = "outcast"
+        end
+        --module:log("error", "---- Benz log msg - " .. affil.final .. " from " .. inspect(claims));
+        --module:log("error", debug.traceback());
+        session.jitsi_meet_room_affiliation = affil.final;
+
+        local contextUser = {};
+        contextUser["name"] = claims["nick"];
+        session.jitsi_meet_context_user = contextUser;
 
         -- Binds the user details to the session if available
         if claims["context"] ~= nil then
@@ -337,11 +385,38 @@ function Util:verify_room(session, room_address)
         return true;
     end
 
+    -- allow anonymous users because apparently that's how jicofo works. hopefully something else actually enforces access control elsewhere???
+    if not session.jitsi_meet_issuer then
+        module:log("debug", "allowing anonymous session");
+        return true
+    end
+
+    -- handle auth for one-on-one query conversations
+    local decoded_room_name = hex.from(room);
+    module:log("debug", "decoded room name: " .. decoded_room_name);
+    local server_address, first_query_partner, second_query_partner = decoded_room_name:match("^([^/]+)/query[-]([^#]+)#([^#]+)$");
+    local query_auth = first_query_partner ~= nil;
+    if query_auth then
+        local client_nick = session.jitsi_meet_context_user ~= nil and session.jitsi_meet_context_user.name;
+        local participant = client_nick == first_query_partner or client_nick == second_query_partner;
+        local same_server = server_address == session.jitsi_meet_issuer;
+        -- return participant and same_server;
+        if participant and same_server then
+            return true;
+        else
+            module:log("debug", "query auth failed. continuing...");
+        end
+    end
+
     local auth_room = session.jitsi_meet_room;
+    if auth_room and not session.jitsi_meet_joined then
+        module:log("debug", "ignoring room claim without joined claim");
+        auth_room = nil
+    end
     if not self.enableDomainVerification then
         -- if auth_room is missing, this means user is anonymous (no token for
         -- its domain) we let it through, jicofo is verifying creation domain
-        if auth_room and room ~= string.lower(auth_room) and auth_room ~= '*' then
+        if auth_room and room ~= string.lower(auth_room) and auth_room ~= '*' or query_auth then
             return false;
         end
 

@@ -2,6 +2,8 @@ local jid = require "util.jid";
 local timer = require "util.timer";
 local http = require "net.http";
 
+module:log("info", "kiwiirc patch active: prosody-plugins/util_kiwi.lib.lua");
+
 local http_timeout = 30;
 local have_async, async = pcall(require, "util.async");
 local http_headers = {
@@ -182,12 +184,19 @@ function update_presence_identity(
                 if k == "name" and v == "identity" then
                     return nil
                 end
+                -- Also remove the nick element
+                if k == "name" and v == "nick" then
+                    return nil
+                end
             end
             return tag
         end
     )
     module:log("debug",
         "Presence after previous identity stripped: %s", tostring(stanza));
+
+    -- Override nick
+    stanza:tag("nick", {xmlns='http://jabber.org/protocol/nick'}):text(user.name):up();
 
     stanza:tag("identity"):tag("user");
     for k, v in pairs(user) do

@@ -5,8 +5,10 @@ local formdecode = require "util.http".formdecode;
 local generate_uuid = require "util.uuid".generate;
 local new_sasl = require "util.sasl".new;
 local sasl = require "util.sasl";
-local token_util = module:require "token/util".new(module);
+local token_util = module:require "token/util_kiwi".new(module);
 local sessions = prosody.full_sessions;
+
+module:log("info", "kiwiirc patch active: prosody-plugins/mod_auth_kiwi_token.lua");
 
 -- no token configuration
 if token_util == nil then
