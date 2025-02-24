@@ -84,6 +84,12 @@ export default {
             this.scriptLoad();
         }
 
+        this.listen(this.$state, 'buffer.closed', (event) => {
+            if (event.buffer === this.buffer) {
+                kiwi.emit('mediaviewer.hide');
+            }
+        });
+
         // MediaViewer also sets a height on mounted()
         // and is called after this mounted()
         this.$nextTick(() => {
@@ -124,16 +130,18 @@ export default {
             this.$el.appendChild(scr);
         },
         scriptLoaded() {
-            const configOverwrite = config.setting('configOverwrite');
-
             // Disable prejoin page as we are setting the users nick
-            Object.assign(configOverwrite, {
-                prejoinPageEnabled: false,
-                prejoinConfig: {
-                    enabled: false,
+            const configOverwrite = Object.assign(
+                {},
+                config.setting('configOverwrite'),
+                {
+                    prejoinPageEnabled: false,
+                    prejoinConfig: {
+                        enabled: false,
+                    },
+                    hideConferenceSubject: true,
                 },
-                hideConferenceSubject: true,
-            });
+            );
 
             if (config.setting('showLink') && !this.link) {
                 this.getLink();
