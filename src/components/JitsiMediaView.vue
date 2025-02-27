@@ -84,7 +84,7 @@ export default {
             this.scriptLoad();
         }
 
-        this.listen(this.$state, 'buffer.closed', (event) => {
+        this.listen(this.$state, 'buffer.close', (event) => {
             if (event.buffer === this.buffer) {
                 kiwi.emit('mediaviewer.hide');
             }

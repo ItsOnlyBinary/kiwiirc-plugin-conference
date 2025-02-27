@@ -1,7 +1,7 @@
-const base62Chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const base36Chars = '0123456789abcdefghijklmnopqrstuvwxyz';
 
-function base62Encode(binary) {
-    let base62 = '';
+function base36Encode(binary) {
+    let base36 = '';
     let bytes = [];
 
     for (let i = 0; i < binary.length; i++) {
@@ -14,18 +14,18 @@ function base62Encode(binary) {
 
         for (let i = bytes.length - 1; i >= 0; i--) {
             const accumulator = bytes[i] + remainder * 256;
-            const digit = Math.floor(accumulator / 62);
-            remainder = accumulator % 62;
+            const digit = Math.floor(accumulator / 36);
+            remainder = accumulator % 36;
             if (quotient.length > 0 || digit > 0) {
                 quotient.unshift(digit);
             }
         }
 
-        base62 += base62Chars[remainder];
+        base36 += base36Chars[remainder];
         bytes = quotient;
     }
 
-    return base62;
+    return base36;
 }
 
 async function sha256(str) {
@@ -36,5 +36,5 @@ async function sha256(str) {
 
 export async function encodeRoomName(str) {
     const hash = await sha256(str);
-    return base62Encode(hash).slice(-16);
+    return base36Encode(hash).slice(-16);
 }
