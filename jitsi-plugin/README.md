@@ -28,7 +28,7 @@ JWT_APP_SECRET=<YOUR SECRET FOR EXTJWT>
 JWT_AUTH_TYPE=kiwiirc_token
 JWT_ENABLE_DOMAIN_VERIFICATION=1
 JWT_TOKEN_AUTH_MODULE=kiwiirc_token_verification
-XMPP_MUC_MODULES=kiwiirc_token_affiliation
+XMPP_MUC_MODULES=kiwiirc_xmpp_muc
 ```
 
 It is also advised to set `JITSI_IMAGE_VERSION` so that it does not update unexpectedly.
@@ -43,7 +43,6 @@ KIWIIRC_DISABLE_OWNER_MODERATOR=0   # stops channel owner from becoming a modera
 KIWIIRC_DISABLE_OP_MODERATOR=0      # stops op's from becoming a moderator (network operators are always moderators).
 KIWIIRC_DISABLE_HALFOP_MODERATOR=0  # stops half-op's from becoming a moderator.
 KIWIIRC_DISABLE_QUERY_MODERATOR=0   # stops both members of a query chat becoming moderators.
-KIWIIRC_ENABLE_NO_MODE_MEMBER=0     # users without voice will be given "member" affiliation.
 ```
 
 

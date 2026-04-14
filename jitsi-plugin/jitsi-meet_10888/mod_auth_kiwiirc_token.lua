@@ -5,7 +5,7 @@ local formdecode = require "util.http".formdecode;
 local generate_uuid = require "util.uuid".generate;
 local new_sasl = require "util.sasl".new;
 local sasl = require "util.sasl";
-local token_util = module:require "token/util".new(module);
+local token_util = module:require "kiwiirc_token/util".new(module);
 local sessions = prosody.full_sessions;
 
 -- no token configuration
@@ -35,6 +35,43 @@ module:hook("pre-resource-unbind", function (e)
         error = error
     });
 end, 11);
+
+-- Extract token from Authorization header or 'token' URL query param when session is created.
+-- The Authorization header is used for EXTJWT tokens sent by kiwiirc. The query param
+-- allows an override for compatibility.
+function init_session(event)
+    local session, request = event.session, event.request;
+    local query = request.url.query;
+
+    local token = nil;
+
+    -- extract token from Authorization header
+    if request.headers["authorization"] then
+        -- assumes the header value starts with "Bearer "
+        token = request.headers["authorization"]:sub(8, #request.headers["authorization"])
+    end
+
+    -- allow override of token via query parameter
+    if query ~= nil then
+        local params = formdecode(query);
+
+        -- The following fields are filled in the session, by extracting them
+        -- from the query and no validation is being done.
+        -- After validating auth_token will be cleaned in case of error and few
+        -- other fields will be extracted from the token and set in the session
+
+        if params and params.token then
+            token = params.token;
+        end
+    end
+
+    -- in either case set auth_token in the session
+    session.auth_token = token;
+    session.user_agent_header = request.headers['user_agent'];
+end
+
+module:hook_global("bosh-session", init_session);
+module:hook_global("websocket-session", init_session);
 
 function provider.test_password(username, password)
     return nil, "Password based auth not supported";
@@ -68,7 +105,7 @@ function first_stage_auth(session)
             "Error verifying token on pre authentication stage:%s, reason:%s", pre_event_result.error, pre_event_result.reason);
         session.auth_token = nil;
         measure_pre_fetch_fail(1);
-        return  pre_event_result;
+        return pre_event_result;
     end
 
     local res, error, reason = token_util:process_and_verify_token(session);
@@ -79,14 +116,14 @@ function first_stage_auth(session)
                 session.user_agent_header);
         session.auth_token = nil;
         measure_verify_fail(1);
-        return  { res = res, error = error, reason = reason };
+        return { res = res, error = error, reason = reason };
     end
 
     local shouldAllow = prosody.events.fire_event("jitsi-access-ban-check", session);
     if shouldAllow == false then
         module:log("warn", "user is banned")
         measure_ban(1);
-        return  { res = false, error = "not-allowed", reason = "user is banned" };
+        return { res = false, error = "not-allowed", reason = "user is banned" };
     end
 
     return { verify_result = res, custom_username = prosody.events.fire_event("pre-jitsi-authentication", session) };
@@ -202,4 +239,10 @@ module:hook_global('c2s-session-updated', function (event)
     session.jitsi_meet_domain = from_session.jitsi_meet_domain;
     session.jitsi_meet_tenant_mismatch = from_session.jitsi_meet_tenant_mismatch;
     session.jitsi_breakout_main_jid = from_session.jitsi_breakout_main_jid;
+    -- kiwiirc-specific fields
+    session.jitsi_meet_channel = from_session.jitsi_meet_channel;
+    session.jitsi_meet_affiliation = from_session.jitsi_meet_affiliation;
+    session.jitsi_meet_issuer = from_session.jitsi_meet_issuer;
+    session.jitsi_meet_joined = from_session.jitsi_meet_joined;
+    session.user_agent_header = from_session.user_agent_header;
 end, 1);

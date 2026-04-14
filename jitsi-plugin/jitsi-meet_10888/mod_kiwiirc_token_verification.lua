@@ -29,7 +29,7 @@ if parentCtx == nil then
     return;
 end
 
-local token_util = module:require "token/util".new(parentCtx);
+local token_util = module:require "kiwiirc_token/util".new(parentCtx);
 
 -- no token configuration
 if token_util == nil then
@@ -91,7 +91,7 @@ local function verify_user(session, stanza)
 
         local response = st.error_reply(stanza, 'cancel', 'not-allowed', reason);
         if err then
-            response:tag(err, { xmlns = 'http://jitsi.org/jitmeet' });
+            response:tag(err, { xmlns = 'http://jitsi.org/protocol/jitmeet' });
         end
 
         session.send(response);
