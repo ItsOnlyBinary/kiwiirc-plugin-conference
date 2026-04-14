@@ -18,7 +18,7 @@ module.exports = {
         sourceType: 'module',
     },
 
-    plugins: ['@kiwiirc', 'jsdoc'],
+    plugins: ['jsdoc'],
 
     extends: [
         'plugin:vue/recommended',

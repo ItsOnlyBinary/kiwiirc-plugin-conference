@@ -21,6 +21,7 @@ local async = require "util.async";
 local inspect = require 'inspect';
 
 local kiwi_util = module:require "kiwiirc_util";
+local query_pattern = kiwi_util.query_pattern();
 
 local nr_retries = 3;
 local ssl = require "ssl";
@@ -313,8 +314,13 @@ function Util:process_and_verify_token(session)
     )
     if claims ~= nil then
         if self.requireRoomClaim then
-            -- claims["room"] = kiwi_util.encode_room_name(claims["iss"], claims["channel"])
-            -- module:log("warn", "room encoded from '%s/%s' to '%s'", claims["iss"], claims["channel"], claims.room);
+            if claims["channel"] ~= nil then
+                claims["room"] = kiwi_util.encode_room_name(claims["iss"], claims["channel"])
+                module:log("debug", "room encoded from '%s/%s' to '%s'", claims["iss"], claims["channel"]);
+            else
+                claims["room"] = "*";
+                module:log("debug", "room maybe query");
+            end
         end
 
         local joined = claims["joined"];
@@ -326,13 +332,13 @@ function Util:process_and_verify_token(session)
         session.jitsi_meet_channel = claims["channel"];
         session.jitsi_meet_room = claims["room"];
         -- Binds domain name to the session
-        session.jitsi_meet_domain = "jitsi.meet";
+        session.jitsi_meet_domain = "meet.jitsi";
 
         session.jitsi_meet_joined = claims["joined"];
         session.jitsi_meet_issuer = claims["iss"];
 
         session.jitsi_meet_affiliation = kiwi_util.get_kiwiirc_affiliation(claims);
-        module:log("warn", "token affiliation: '%s' for %s", session.jitsi_meet_affiliation, claims.sub);
+        module:log("debug", "token affiliation: '%s' for %s", session.jitsi_meet_affiliation, claims.sub);
 
         claims["context"] = {};
         claims["context"]["user"] = {};
@@ -390,7 +396,6 @@ end
 --         it and returns false in case verification was processed
 --         and was not successful
 function Util:verify_room(session, room_address)
-    module:log("warn", "verify_room")
     if self.allowEmptyToken and session.auth_token == nil then
         --module:log("debug", "Skipped room token verification - empty tokens are allowed");
         return true;
@@ -401,17 +406,19 @@ function Util:verify_room(session, room_address)
     if room == nil then
         log("error",
             "Unable to get name of the MUC room ? to: %s", room_address);
-        return true;
+        return false;
     end
-    module:log("warn", "verify_room room: %s", room)
+
+    module:log("debug", "verify_room: '%s'", room)
+
     if session.jitsi_meet_channel ~= nil then
-        local encoded_room_name = kiwi_util.encode_room_name(session.jitsi_meet_issuer, session.jitsi_meet_channel)
-        module:log("warn", "encoded room: '%s/%s' to '%s'", session.jitsi_meet_issuer, session.jitsi_meet_channel, encoded_room_name);
-        if encoded_room_name ~= room then
-            module:log("warn", "verify_room: Room not matching")
+        if session.jitsi_meet_room ~= room then
+            module:log("warn", "verify_room: Not matching '%s' ~= '%s'", session.jitsi_meet_room, room);
+            return false;
         end
-    elseif not room:match("^q%-[a-zA-Z0-9]{16}$") then
-        module:log("warn", "verify_room: Not a query")
+    elseif not room:match(query_pattern) then
+        module:log("warn", "verify_room: Not a query");
+        return false;
     end
 
     local auth_room = session.jitsi_meet_room;
@@ -466,6 +473,7 @@ function Util:verify_room(session, room_address)
             -- not a regex
             room_to_check = auth_room;
         end
+
         -- module:log("debug", "room to check: %s", room_to_check)
         if not room_to_check then
             if not self.requireRoomClaim then

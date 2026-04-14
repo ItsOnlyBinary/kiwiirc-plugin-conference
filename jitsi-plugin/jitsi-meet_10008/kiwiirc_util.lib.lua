@@ -2,8 +2,8 @@ local sha256 = require "util.hashes".sha256
 
 local kiwi_config = module:require "kiwiirc_config"
 
-
 local base62_chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+local base36_chars = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 local function array_contains(array, element)
     for _, value in ipairs(array) do
@@ -42,12 +42,40 @@ local function base62_encode(binary)
     return base62
 end
 
+local function base36_encode(binary)
+    local base36 = ""
+    local bytes = {}
+
+    for i = 1, #binary do
+        bytes[i] = string.byte(binary, i)
+    end
+
+    while #bytes > 0 do
+        local quotient = {}
+        local remainder = 0
+
+        for i = #bytes, 1, -1 do
+            local accumulator = bytes[i] + remainder * 256
+            local digit = math.floor(accumulator / 36)
+            remainder = accumulator % 36
+            if #quotient > 0 or digit > 0 then
+                table.insert(quotient, 1, digit)
+            end
+        end
+
+        base36 = base36 .. base36_chars:sub(remainder + 1, remainder + 1)
+        bytes = quotient
+    end
+
+    return base36
+end
+
 local kiwi_util = {}
 
 function kiwi_util.encode_room_name(server, channel)
     local hash = sha256(server .. "/" .. channel)
-    local hash_b62 = base62_encode(hash)
-    return string.sub(hash_b62, -16)
+    local hash_b36 = base36_encode(hash)
+    return string.sub(hash_b36, -16)
 end
 
 function kiwi_util.get_kiwiirc_affiliation(claims)
@@ -56,6 +84,12 @@ function kiwi_util.get_kiwiirc_affiliation(claims)
     local allMod = kiwi_util.get_kiwiirc_env("KIWIIRC_EVERYONE_MODERATOR")
 
     if allMod then
+        return "owner"
+    end
+
+    local queryMod = kiwi_util.get_kiwiirc_env("KIWIIRC_DISABLE_QUERY_MODERATOR")
+    if claims.channel == nil and not queryMod then
+        -- query conference
         return "owner"
     end
 
@@ -105,6 +139,14 @@ function kiwi_util.get_kiwiirc_env(key)
     end
 
     return value
+end
+
+function kiwi_util.query_pattern()
+    local pattern = "^q%-"
+    for i = 1, 16 do
+        pattern = pattern .. "[a-z0-9]"
+    end
+    return pattern .. "$"
 end
 
 return kiwi_util

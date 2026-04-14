@@ -42,6 +42,7 @@ KIWIIRC_EVERYONE_MODERATOR=0        # makes every user with a token becomes jits
 KIWIIRC_DISABLE_OWNER_MODERATOR=0   # stops channel owner from becoming a moderator.
 KIWIIRC_DISABLE_OP_MODERATOR=0      # stops op's from becoming a moderator (network operators are always moderators).
 KIWIIRC_DISABLE_HALFOP_MODERATOR=0  # stops half-op's from becoming a moderator.
+KIWIIRC_DISABLE_QUERY_MODERATOR=0   # stops both members of a query chat becoming moderators.
 KIWIIRC_ENABLE_NO_MODE_MEMBER=0     # users without voice will be given "member" affiliation.
 ```
 
@@ -51,5 +52,6 @@ KIWIIRC_ENABLE_NO_MODE_MEMBER=0     # users without voice will be given "member"
 To allow users with the link to the conference to connect without a token set the following environment variables
 ```
 ENABLE_GUESTS=1
+JWT_ALLOW_EMPTY=1
 ENABLE_PREJOIN_PAGE=1
 ```
