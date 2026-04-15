@@ -1,5 +1,6 @@
 local http_server = require "net.http.server";
 local jid = require "util.jid";
+local sha256 = require "util.hashes".sha256;
 local st = require 'util.stanza';
 local timer = require "util.timer";
 local http = require "net.http";
@@ -701,6 +702,120 @@ local function is_admin(_jid)
     return false;
 end
 
+-- KiwiIRC-specific utilities
+
+local kiwi_config = module:require "kiwiirc_config";
+
+local base36_chars = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+local function base36_encode(binary)
+    local base36 = "";
+    local bytes = {};
+
+    for i = 1, #binary do
+        bytes[i] = string.byte(binary, i);
+    end
+
+    while #bytes > 0 do
+        local quotient = {};
+        local remainder = 0;
+
+        for i = #bytes, 1, -1 do
+            local accumulator = bytes[i] + remainder * 256;
+            local digit = math.floor(accumulator / 36);
+            remainder = accumulator % 36;
+            if #quotient > 0 or digit > 0 then
+                table.insert(quotient, 1, digit);
+            end
+        end
+
+        base36 = base36 .. base36_chars:sub(remainder + 1, remainder + 1);
+        bytes = quotient;
+    end
+
+    return base36;
+end
+
+local function kiwiirc_get_env(key)
+    local value = os.getenv(key);
+
+    if value == nil then
+        local default = kiwi_config[key];
+        if default == nil then
+            return false;
+        else
+            return default;
+        end
+    end
+
+    if value == "false" or value == "0" then
+        return false;
+    end
+
+    if value == "true" or value == "1" then
+        return true;
+    end
+
+    return value;
+end
+
+local function kiwiirc_encode_room_name(server, channel)
+    local hash = sha256(server .. "/" .. channel);
+    local hash_b36 = base36_encode(hash);
+    return string.sub(hash_b36, -16);
+end
+
+local function kiwiirc_get_affiliation(claims)
+    local allMod = kiwiirc_get_env("KIWIIRC_EVERYONE_MODERATOR");
+    if allMod then
+        return "owner";
+    end
+
+    local queryMod = kiwiirc_get_env("KIWIIRC_DISABLE_QUERY_MODERATOR");
+    if claims.channel == nil and not queryMod then
+        return "owner";
+    end
+
+    if claims.umodes ~= nil then
+        for _, v in ipairs(claims.umodes) do
+            if v == "o" then return "owner"; end
+        end
+    end
+
+    if claims.cmodes ~= nil then
+        local channelOwner = kiwiirc_get_env("KIWIIRC_DISABLE_OWNER_MODERATOR");
+        if not channelOwner then
+            for _, v in ipairs(claims.cmodes) do
+                if v == "q" then return "owner"; end
+            end
+        end
+
+        local op = kiwiirc_get_env("KIWIIRC_DISABLE_OP_MODERATOR");
+        if not op then
+            for _, v in ipairs(claims.cmodes) do
+                if v == "o" then return "owner"; end
+            end
+        end
+
+        local halfop = kiwiirc_get_env("KIWIIRC_DISABLE_HALFOP_MODERATOR");
+        if not halfop then
+            for _, v in ipairs(claims.cmodes) do
+                if v == "h" then return "owner"; end
+            end
+        end
+    end
+
+    return "member";
+end
+
+local function kiwiirc_query_pattern()
+    local pattern = "^q%-";
+    for i = 1, 16 do
+        pattern = pattern .. "[a-z0-9]";
+    end
+    return pattern .. "$";
+end
+
 -- Filter out identity information (nick name, email, etc) from a presence stanza.
 local function filter_identity_from_presence(orig_stanza)
     local stanza = st.clone(orig_stanza);
@@ -763,4 +878,8 @@ return {
     table_shallow_copy = table_shallow_copy;
     table_find = table_find;
     table_equals = table_equals;
+    encode_room_name = kiwiirc_encode_room_name;
+    get_kiwiirc_affiliation = kiwiirc_get_affiliation;
+    get_kiwiirc_env = kiwiirc_get_env;
+    query_pattern = kiwiirc_query_pattern;
 };

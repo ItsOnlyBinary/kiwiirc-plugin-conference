@@ -35,6 +35,8 @@ import platform from 'platform';
 import * as config from '../config.js';
 import * as utils from '../lib/utils.js';
 
+const MAX_RECONNECT_ATTEMPTS = 3;
+
 export default {
     props: ['componentProps'],
     data() {
@@ -65,7 +67,7 @@ export default {
             return this.buffer.getNetwork();
         },
     },
-    mounted() {
+    async mounted() {
         if (platform.name === 'IE') {
             this.notSupported = true;
             return;
@@ -74,12 +76,16 @@ export default {
         this.isLoading = true;
 
         if (config.setting('secure')) {
-            kiwi.on('irc.raw.EXTJWT', this.handleExtjwt);
-            const jwtTarget = this.buffer.isQuery() ? '*' : this.roomName;
-            this.network.ircClient.raw('EXTJWT', jwtTarget);
-        } else {
-            this.scriptLoad();
+            try {
+                this.token = await this.fetchToken();
+            } catch (e) {
+                this.addLocalMessage('Conference: failed to obtain authentication token');
+                this.isLoading = false;
+                return;
+            }
         }
+
+        this.scriptLoad();
 
         // MediaViewer also sets a height on mounted()
         // and is called after this mounted()
@@ -89,6 +95,10 @@ export default {
     },
     beforeDestroy() {
         this.componentProps.pluginState.isActive = false;
+        clearTimeout(this.reconnectTimeout);
+        // prevent any pending reconnect from proceeding after destroy
+        this.reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+
         let mediaviewer = this.$el.parentElement;
         if (mediaviewer) {
             mediaviewer.style.height = '';
@@ -99,14 +109,37 @@ export default {
         }
     },
     methods: {
-        handleExtjwt(command, message) {
-            if (message.params[2] === '*') {
-                this.token = message.params[3];
-            } else {
-                this.token += message.params[2];
-                this.scriptLoad();
-                kiwi.off('irc.raw.EXTJWT', this.handleExtjwt);
-            }
+        fetchToken() {
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    kiwi.off('irc.raw.EXTJWT', handler);
+                    reject(new Error('EXTJWT timeout'));
+                }, 10000);
+
+                let token = '';
+                const handler = (command, message) => {
+                    if (message.params[2] === '*') {
+                        token = message.params[3];
+                    } else {
+                        token += message.params[2];
+                        clearTimeout(timeout);
+                        kiwi.off('irc.raw.EXTJWT', handler);
+                        setTimeout(() => resolve(token), 60000);
+                        // resolve(token);
+                    }
+                };
+
+                kiwi.on('irc.raw.EXTJWT', handler);
+                this.network.ircClient.raw('EXTJWT', this.buffer.isQuery() ? '*' : this.roomName);
+            });
+        },
+        addLocalMessage(text) {
+            kiwi.state.addMessage(this.buffer, {
+                time: Date.now(),
+                nick: '',
+                message: text,
+                type: 'error',
+            });
         },
         scriptLoad() {
             const roomNamePromise = utils.encodeRoomName(this.network.connection.server + '/' + this.roomName);
@@ -144,24 +177,42 @@ export default {
                 interfaceConfigOverwrite: config.setting('interfaceConfigOverwrite'),
                 onload: () => {
                     this.api.executeCommand('toggleTileView');
-                    this.api.once('videoConferenceJoined', (event) => {
-                        // this.isLoading = false;
-                        this.isJoined = true;
 
-                        if (!config.setting('showLink') || this.link) {
-                            // if showLink is disabled or the link is ready send our join message,
-                            // if the link is not ready the message will be send when it is
+                    this.api.addEventListener('videoConferenceJoined', () => {
+                        const isReconnect = this.reconnectAttempts > 0;
+                        this.isJoined = true;
+                        this.isLoading = false;
+                        this.reconnectAttempts = 0;
+
+                        if (!isReconnect && (!config.setting('showLink') || this.link)) {
                             this.sendJoinMessage();
                         }
                     });
-                    this.api.once('videoConferenceLeft', () => {
+
+                    this.api.addEventListener('videoConferenceLeft', () => {
+                        console.log('Left Conference');
                         // kiwi.emit('mediaviewer.hide');
                     });
+
                     this.api.once('browserSupport', (event) => {
                         if (!event.supported) {
                             this.isLoading = false;
                             this.isJoined = false;
                             this.notSupported = true;
+                        }
+                    });
+
+                    this.api.addEventListener('errorOccurred', async (event) => {
+                        if (!event?.error?.message) {
+                            return;
+                        }
+                        if (event?.error?.message === 'Token expired') {
+                            this.api.dispose();
+                            this.api = null;
+                            this.token = await this.fetchToken();
+                            this.scriptLoaded();
+                        } else {
+                            this.addLocalMessage('plugin-conference error: ' + event.error.message);
                         }
                     });
                 },

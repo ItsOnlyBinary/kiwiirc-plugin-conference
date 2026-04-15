@@ -42,7 +42,7 @@ module.exports = {
         'no-console': process.env.NODE_ENV === 'production' ? 'error' : 'warn',
         'no-debugger': process.env.NODE_ENV === 'production' ? 'error' : 'warn',
 
-        '@kiwiirc/class-name-prefix': 'warn',
+        // '@kiwiirc/class-name-prefix': 'warn',
 
         'class-methods-use-this': 0,
         'comma-dangle': ['error', {
