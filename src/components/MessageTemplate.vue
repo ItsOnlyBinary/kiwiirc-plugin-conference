@@ -3,10 +3,10 @@
         <div class="plugin-conference-jointext">
             {{ buffer.isQuery() ? inviteText : joinText }}
         </div>
-        <div v-if="!pluginState.isActive" class="u-button u-button-primary" @click="openJitsi()">
+        <button v-if="!pluginState.isActive" type="button" class="u-button u-button-primary" @click="openJitsi()">
             <i aria-hidden="true" class="fa fa-phone" />
             <span class="plugin-conference-joinbutton">{{ joinButtonText }}</span>
-        </div>
+        </button>
     </div>
 </template>
 
@@ -16,7 +16,14 @@ import { computed } from 'vue';
 import JitsiMediaView from './JitsiMediaView.vue';
 import * as config from '../config.js';
 
-const props = defineProps(['buffer', 'message', 'idx', 'ml', 'pluginState', 'inviteState']);
+const props = defineProps({
+    buffer: { type: Object, required: true },
+    message: { type: Object, required: true },
+    idx: { type: Number, required: true },
+    ml: { type: Object, required: true },
+    pluginState: { type: Object, required: true },
+    inviteState: { type: Object, required: true },
+});
 
 const nicks = computed(() => {
     const maxLength = config.setting('maxParticipantsLength');

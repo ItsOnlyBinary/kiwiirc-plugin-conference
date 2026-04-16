@@ -38,7 +38,9 @@ import * as config from '../config.js';
 import * as utils from '../lib/utils.js';
 
 const emit = defineEmits(['setHeight']);
-const props = defineProps(['componentProps']);
+const props = defineProps({
+    componentProps: { type: Object, required: true },
+});
 
 const el = ref(null);
 
@@ -108,12 +110,8 @@ function removeIrcListeners() {
 
 function fetchToken() {
     return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            kiwi.off('irc.raw.EXTJWT', handler);
-            reject(new Error('EXTJWT timeout'));
-        }, 10000);
-
         let t = '';
+        let timeout = 0;
         const handler = (command, message) => {
             if (message.params[2] === '*') {
                 t = message.params[3];
@@ -124,6 +122,11 @@ function fetchToken() {
                 resolve(t);
             }
         };
+
+        timeout = setTimeout(() => {
+            kiwi.off('irc.raw.EXTJWT', handler);
+            reject(new Error('EXTJWT timeout'));
+        }, 10000);
 
         kiwi.on('irc.raw.EXTJWT', handler);
         network.value.ircClient.raw('EXTJWT', buffer.value.isQuery() ? '*' : roomName.value);
@@ -137,6 +140,65 @@ function addLocalMessage(text) {
         message: text,
         type: 'error',
     });
+}
+
+function sendJoinMessage() {
+    let msgText = buffer.value.isQuery() ? config.setting('inviteText') : config.setting('joinText');
+
+    msgText = '* ' + msgText.replace('{{ nick }}', network.value.nick);
+
+    if (config.setting('showLink') && link.value) {
+        msgText += ' ' + link.value;
+    }
+
+    const message = new network.value.ircClient.Message('PRIVMSG', buffer.value.name, msgText);
+    message.prefix = network.value.nick;
+    message.tags['+kiwiirc.com/conference'] = config.getSetting('tagID');
+    network.value.ircClient.raw(message);
+}
+
+function getShortLink(shortURL, l) {
+    const requestURL = shortURL.replace('{{ link }}', l);
+    fetch(requestURL)
+        .then((r) => r.text())
+        .then((result) => {
+            const urlRegex = kiwi.require('helpers/TextFormatting').urlRegex;
+            const isUrl = new RegExp('^' + urlRegex.source + '$');
+            if (isUrl.test(result)) {
+                link.value = result;
+            }
+            if (isJoined.value) {
+                sendJoinMessage();
+            }
+        });
+}
+
+function getBitlyLink(bitlyURL, l) {
+    const apiKey = config.setting('linkShortenerAPIToken');
+    const requestURL = bitlyURL + '?access_token=' + apiKey + '&longUrl=' + l;
+    fetch(requestURL)
+        .then((r) => r.json())
+        .then((result) => {
+            link.value = result.url;
+            if (isJoined.value) {
+                sendJoinMessage();
+            }
+        });
+}
+
+function getLink() {
+    const l = 'https://' + config.setting('server') + '/' + encodedRoomName.value;
+    if (!config.setting('useLinkShortener')) {
+        link.value = l;
+        return;
+    }
+
+    const shortURL = config.setting('linkShortenerURL');
+    if (shortURL.indexOf('api-ssl.bitly.com') > -1) {
+        getBitlyLink(shortURL, l);
+    } else {
+        getShortLink(shortURL, l);
+    }
 }
 
 function scriptLoaded() {
@@ -234,65 +296,6 @@ function scriptLoad() {
     };
     scr.defer = true;
     el.value.appendChild(scr);
-}
-
-function sendJoinMessage() {
-    let msgText = buffer.value.isQuery() ? config.setting('inviteText') : config.setting('joinText');
-
-    msgText = '* ' + msgText.replace('{{ nick }}', network.value.nick);
-
-    if (config.setting('showLink') && link.value) {
-        msgText += ' ' + link.value;
-    }
-
-    const message = new network.value.ircClient.Message('PRIVMSG', buffer.value.name, msgText);
-    message.prefix = network.value.nick;
-    message.tags['+kiwiirc.com/conference'] = config.getSetting('tagID');
-    network.value.ircClient.raw(message);
-}
-
-function getLink() {
-    const l = 'https://' + config.setting('server') + '/' + encodedRoomName.value;
-    if (!config.setting('useLinkShortener')) {
-        link.value = l;
-        return;
-    }
-
-    const shortURL = config.setting('linkShortenerURL');
-    if (shortURL.indexOf('api-ssl.bitly.com') > -1) {
-        getBitlyLink(shortURL, l);
-    } else {
-        getShortLink(shortURL, l);
-    }
-}
-
-function getShortLink(shortURL, l) {
-    const requestURL = shortURL.replace('{{ link }}', l);
-    fetch(requestURL)
-        .then((r) => r.text())
-        .then((result) => {
-            const urlRegex = kiwi.require('helpers/TextFormatting').urlRegex;
-            const isUrl = new RegExp('^' + urlRegex.source + '$');
-            if (isUrl.test(result)) {
-                link.value = result;
-            }
-            if (isJoined.value) {
-                sendJoinMessage();
-            }
-        });
-}
-
-function getBitlyLink(bitlyURL, l) {
-    const apiKey = config.setting('linkShortenerAPIToken');
-    const requestURL = bitlyURL + '?access_token=' + apiKey + '&longUrl=' + l;
-    fetch(requestURL)
-        .then((r) => r.json())
-        .then((result) => {
-            link.value = result.url;
-            if (isJoined.value) {
-                sendJoinMessage();
-            }
-        });
 }
 
 onMounted(async () => {

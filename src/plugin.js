@@ -56,6 +56,10 @@ kiwi.plugin('conference', (kiwi) => {
         }
     });
 
+    function isConference(tags) {
+        return tags && tags['+kiwiirc.com/conference'] === tagID;
+    }
+
     // Listen for conference irc message
     kiwi.on('irc.message', (event, network, ircEvent) => {
         if (event.from_server || !isConference(event.tags)) {
@@ -101,7 +105,4 @@ kiwi.plugin('conference', (kiwi) => {
         };
     });
 
-    function isConference(tags) {
-        return tags && tags['+kiwiirc.com/conference'] === tagID;
-    }
 });

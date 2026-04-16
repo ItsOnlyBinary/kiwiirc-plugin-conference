@@ -4,9 +4,13 @@
             <div>Close the current conference?</div>
             <input-confirm :flip-connotation="true" @ok="closeConference()" @submit="hideToast()" />
         </div>
-        <div @click="openConference()">
-            <a><i aria-hidden="true" :class="buttonIcon" class="fa" /></a>
-        </div>
+        <button
+            type="button"
+            :aria-label="pluginState.isActive ? 'Close conference' : 'Open conference'"
+            @click="openConference()"
+        >
+            <i aria-hidden="true" :class="buttonIcon" class="fa" />
+        </button>
     </div>
 </template>
 
@@ -16,7 +20,12 @@ import { ref, computed } from 'vue';
 import JitsiMediaView from './JitsiMediaView.vue';
 import * as config from '../config.js';
 
-const props = defineProps(['network', 'buffer', 'sidebarState', 'pluginState']);
+const props = defineProps({
+    network: { type: Object, required: true },
+    buffer: { type: Object, required: true },
+    sidebarState: { type: Object, required: true },
+    pluginState: { type: Object, required: true },
+});
 
 const closePrompt = ref(false);
 
