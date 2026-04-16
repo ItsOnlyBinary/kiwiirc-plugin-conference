@@ -4,12 +4,12 @@
 local basexx = require "basexx";
 local have_async, async = pcall(require, "util.async");
 local hex = require "util.hex";
-local jwt = module:require "kiwiirc_luajwtjitsi";
+local jwt = module:require "luajwtjitsi";
 local jid = require "util.jid";
 local json_safe = require "cjson.safe";
 local path = require "util.paths";
 local sha256 = require "util.hashes".sha256;
-local main_util = module:require "kiwiirc_util";
+local main_util = module:require "util";
 local ends_with = main_util.ends_with;
 local http_get_with_retry = main_util.http_get_with_retry;
 local extract_subdomain = main_util.extract_subdomain;
@@ -25,6 +25,24 @@ local ssl = require "ssl";
 
 -- TODO: Figure out a less arbitrary default cache size.
 local cacheSize = module:get_option_number("jwt_pubkey_cache_size", 128);
+
+-- the cache for generated asap jwt tokens
+local jwtKeyCache = require 'util.cache'.new(cacheSize);
+
+local ASAPTTL_THRESHOLD = module:get_option_number('asap_ttl_threshold', 600);
+local ASAPTTL = module:get_option_number('asap_ttl', 3600);
+local ASAPIssuer = module:get_option_string('asap_issuer', 'jitsi');
+local ASAPAudience = module:get_option_string('asap_audience', 'jitsi');
+local ASAPKeyId = module:get_option_string('asap_key_id', 'jitsi');
+local ASAPKeyPath = module:get_option_string('asap_key_path', '/etc/prosody/certs/asap.key');
+
+local ASAPKey;
+local f = io.open(ASAPKeyPath, 'r');
+
+if f then
+    ASAPKey = f:read('*all');
+    f:close();
+end
 
 local Util = {}
 Util.__index = Util
@@ -123,6 +141,7 @@ function Util.new(module)
         self.cachedKeys = {};
         local update_keys_cache;
         update_keys_cache = async.runner(function (name)
+            local content, code, cache_for;
             content, code, cache_for = http_get_with_retry(self.cacheKeysUrl, nr_retries);
             if content ~= nil then
                 local keys_to_delete = table_shallow_copy(self.cachedKeys);
@@ -228,13 +247,8 @@ end
 -- session.jitsi_meet_context_group - the group value from the token
 -- session.jitsi_meet_context_features - the features value from the token
 -- @param session the current session
--- @param acceptedIssuers optional list of accepted issuers to check
 -- @return false and error
-function Util:process_and_verify_token(session, acceptedIssuers)
-    if not acceptedIssuers then
-        acceptedIssuers = self.acceptedIssuers;
-    end
-
+function Util:process_and_verify_token(session)
     if session.auth_token == nil then
         if self.allowEmptyToken then
             return true;
@@ -291,40 +305,21 @@ function Util:process_and_verify_token(session, acceptedIssuers)
         session.auth_token,
         self.signatureAlgorithm,
         key,
-        acceptedIssuers,
+        self.acceptedIssuers,
         self.acceptedAudiences
     )
     if claims ~= nil then
         if self.requireRoomClaim then
-            local roomClaim = claims["channel"];
+            local roomClaim = claims["room"];
             if roomClaim == nil then
-                return false, "'channel' claim is missing";
+                return false, "'room' claim is missing";
             end
-
-            local encRoom = claims["iss"] .. "/" .. roomClaim;
-            claims["room"] = encRoom:gsub('.', function (c) return string.format('%02X', string.byte(c)) end):lower();
-            module:log("warn", "room encoded from " .. encRoom .. " as " .. claims.room);
-        end
-
-        local joined = claims["joined"];
-        if joined <= 0 then
-            return false, "user is not member of the channel";
         end
 
         -- Binds room name to the session which is later checked on MUC join
         session.jitsi_meet_room = claims["room"];
         -- Binds domain name to the session
-        session.jitsi_meet_domain = "test.test";
-
-        session.jitsi_meet_joined = claims["joined"];
-        session.jitsi_meet_issuer = claims["iss"];
-
-        session.jitsi_meet_affiliation = get_kiwiirc_affiliation(claims);
-        module:log("warn", "affiliation = '%s' for %s ", session.jitsi_meet_affiliation, claims.sub);
-
-        claims["context"] = {};
-        claims["context"]["user"] = {};
-        claims["context"]["user"]["name"] = claims["sub"];
+        session.jitsi_meet_domain = claims["sub"];
 
         -- Binds the user details to the session if available
         if claims["context"] ~= nil then
@@ -497,56 +492,48 @@ function Util:verify_room(session, room_address)
     end
 end
 
-function array_contains(array, element)
-    for _, value in ipairs(array) do
-        if value == element then
-            return true
+function Util:generateAsapToken(audience)
+    if not ASAPKey then
+        module:log('warn', 'No ASAP Key read, asap key generation is disabled');
+        return ''
+    end
+
+    audience = audience or ASAPAudience
+    local t = os.time()
+    local err
+    local exp_key = 'asap_exp.'..audience
+    local token_key = 'asap_token.'..audience
+    local exp = jwtKeyCache:get(exp_key)
+    local token = jwtKeyCache:get(token_key)
+
+    --if we find a token and it isn't too far from expiry, then use it
+    if token ~= nil and exp ~= nil then
+        exp = tonumber(exp)
+        if (exp - t) > ASAPTTL_THRESHOLD then
+            return token
         end
     end
-    return false
-end
 
-function get_kiwiirc_affiliation(claims)
-    local allMod = get_kiwiirc_env("KIWIIRC_EVERYONE_MODERATOR");
+    --expiry is the current time plus TTL
+    exp = t + ASAPTTL
+    local payload = {
+        iss = ASAPIssuer,
+        aud = audience,
+        nbf = t,
+        exp = exp,
+    }
 
-    if allMod then
-        return "admin";
+    -- encode
+    local alg = 'RS256'
+    token, err = jwt.encode(payload, ASAPKey, alg, { kid = ASAPKeyId })
+    if not err then
+        token = 'Bearer '..token
+        jwtKeyCache:set(exp_key, exp)
+        jwtKeyCache:set(token_key, token)
+        return token
+    else
+        return ''
     end
-
-    -- Possible values for affiliation are "owner", "admin", "member", "outcast" (banned) and "none" (no affiliation).
-    local affiliation = "none";
-
-    if claims.umodes ~= nil and array_contains(claims.umodes, "o") then
-        -- network operator
-        return "owner"
-    end
-
-    if claims.cmodes ~= nil then
-        local enableOwner = get_kiwiirc_env("KIWIIRC_ENABLE_CHANNEL_OWNER");
-        if enableOwner and array_contains(claims.cmodes, "q") then return "owner" end
-
-        if array_contains(claims.cmodes, "o") then return "admin" end
-
-        local halfop = get_kiwiirc_env("KIWIIRC_DISABLE_HALFOP_MODERATOR");
-        if not halfop and array_contains(claims.cmodes, "h") then return "admin" end
-
-        if array_contains(claims.cmodes, "v") then return "member" end
-
-        local enableNoMode = get_kiwiirc_env("KIWIIRC_ENABLE_NO_MODE_MEMBER");
-        if enableNoMode then return "memeber" end
-    end
-
-    return "member";
-end
-
-function get_kiwiirc_env(key)
-    local value = os.getenv(key);
-
-    if value ~= nil and value ~= "false" and value ~= "0" then
-        return true;
-    end
-
-    return false;
 end
 
 return Util;
