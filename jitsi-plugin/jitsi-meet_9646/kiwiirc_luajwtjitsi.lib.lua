@@ -226,7 +226,7 @@ function M.verify(token, expectedAlgo, key, acceptedIssuers, acceptedAudiences)
 
 
 	if body.exp and os.time() >= body.exp then
-		return nil, "Not acceptable by exp ("..tostring(os.time()-body.exp)..")"
+		return nil, "Token expired"
 	end
 
 	if body.nbf and os.time() < body.nbf then
@@ -246,11 +246,15 @@ function M.verify(token, expectedAlgo, key, acceptedIssuers, acceptedAudiences)
 	if acceptedAudiences ~= nil then
 		local audClaim = body.aud;
 		if audClaim == nil then
-        return nil, "'aud' claim is missing";
-    end
-    if not verify_claim(audClaim, acceptedAudiences) then
-        return nil, "invalid 'aud' claim";
-    end
+			-- Missing aud is only acceptable when the wildcard '*' is in the list,
+			-- which means any (or no) audience is permitted. InspIRCd's EXTJWT
+			-- module does not emit an aud claim, so we must tolerate its absence.
+			if not verify_claim('*', acceptedAudiences) then
+				return nil, "'aud' claim is missing";
+			end
+		elseif not verify_claim(audClaim, acceptedAudiences) then
+			return nil, "invalid 'aud' claim";
+		end
 	end
 
 	return body

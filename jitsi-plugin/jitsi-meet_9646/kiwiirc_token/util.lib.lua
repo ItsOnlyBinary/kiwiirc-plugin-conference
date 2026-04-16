@@ -4,7 +4,7 @@
 local basexx = require "basexx";
 local have_async, async = pcall(require, "util.async");
 local hex = require "util.hex";
-local jwt = module:require "luajwtjitsi";
+local jwt = module:require "kiwiirc_luajwtjitsi";
 local jid = require "util.jid";
 local json_safe = require "cjson.safe";
 local path = require "util.paths";
@@ -19,6 +19,9 @@ local cjson_safe  = require 'cjson.safe'
 local timer = require "util.timer";
 local async = require "util.async";
 local inspect = require 'inspect';
+
+local kiwi_util = module:require "kiwiirc_util";
+local query_pattern = kiwi_util.query_pattern();
 
 local nr_retries = 3;
 local ssl = require "ssl";
@@ -43,6 +46,23 @@ if f then
     ASAPKey = f:read('*all');
     f:close();
 end
+
+-- Replay protection: track SHA-256 hashes of tokens that have been authenticated
+-- until their expiry, so each token can only establish one session.
+-- Keys: hex SHA-256 of the raw token string. Values: expiry (unix timestamp).
+local usedTokens = {};
+local TOKEN_SWEEP_INTERVAL = 60; -- seconds between sweeps
+
+local function sweep_used_tokens()
+    local now = os.time();
+    for hash, exp in pairs(usedTokens) do
+        if now >= exp then
+            usedTokens[hash] = nil;
+        end
+    end
+    return TOKEN_SWEEP_INTERVAL;
+end
+timer.add_task(TOKEN_SWEEP_INTERVAL, sweep_used_tokens);
 
 local Util = {}
 Util.__index = Util
@@ -110,8 +130,14 @@ function Util.new(module)
         return nil;
     end
 
-    if self.appSecret == nil and self.asapKeyServer == nil then
-        module:log("error", "'app_secret' or 'asap_key_server' must be specified");
+    -- Optional pre-configured URL for an external token verification endpoint.
+    -- When set alongside app_secret, the token must pass both verifications.
+    -- Can be set via the JWT_VFY_URL environment variable or the jwt_vfy_url Prosody option.
+    self.jwtVfyUrl = os.getenv('JWT_VFY_URL') or module:get_option_string('jwt_vfy_url');
+
+    if self.appSecret == nil and self.asapKeyServer == nil and self.cacheKeysUrl == nil
+            and self.jwtVfyUrl == nil then
+        module:log("error", "'app_secret', 'asap_key_server', 'cache_keys_url' or 'jwt_vfy_url' must be specified");
         return nil;
     end
 
@@ -120,6 +146,9 @@ function Util.new(module)
         if self.asapKeyServer ~= nil then
             self.signatureAlgorithm = "RS256"
         elseif self.appSecret ~= nil then
+            self.signatureAlgorithm = "HS256"
+        elseif self.jwtVfyUrl ~= nil then
+            -- jwt_vfy_url-only mode: EXTJWT uses HS256, but allow override via signature_algorithm
             self.signatureAlgorithm = "HS256"
         end
     end
@@ -257,16 +286,27 @@ function Util:process_and_verify_token(session)
         end
     end
 
+    -- Replay protection: reject tokens that have already been used.
+    -- Checked before expensive cryptographic verification.
+    local token_hash = hex.to(sha256(session.auth_token));
+    if usedTokens[token_hash] ~= nil then
+        module:log("warn", "Replay detected: token hash %s already used", token_hash:sub(1, 16));
+        return false, "not-allowed", "token has already been used";
+    end
+
     local key;
+    local skip_sig_verify = false;
     if session.public_key then
         -- We're using an public key stored in the session
         -- module:log("debug","Public key was found on the session");
         key = session.public_key;
-    elseif self.asapKeyServer and session.auth_token ~= nil then
+    elseif (self.asapKeyServer or self.cacheKeysUrl) and session.auth_token ~= nil then
         -- We're fetching an public key from an ASAP server
         local dotFirst = session.auth_token:find("%.");
         if not dotFirst then return false, "not-allowed", "Invalid token" end
-        local header, err = json_safe.decode(basexx.from_url64(session.auth_token:sub(1,dotFirst-1)));
+        local headerPartEncoded = basexx.from_url64(session.auth_token:sub(1,dotFirst-1));
+        if not headerPartEncoded then return false, "not-allowed", "Invalid token" end
+        local header, err = json_safe.decode(headerPartEncoded);
         if err then
             return false, "not-allowed", "bad token format";
         end
@@ -294,32 +334,84 @@ function Util:process_and_verify_token(session)
     elseif self.appSecret ~= nil then
         -- We're using a symmetric secret
         key = self.appSecret
+    elseif self.jwtVfyUrl ~= nil then
+        -- jwtVfyUrl-only mode: skip local signature verification; the vfy URL
+        -- endpoint is the sole cryptographic authority for this token
+        skip_sig_verify = true;
     end
 
-    if key == nil then
+    if not skip_sig_verify and key == nil then
         return false, "not-allowed", "signature verification key is missing";
     end
 
-    -- now verify the whole token
-    local claims, msg = jwt.verify(
-        session.auth_token,
-        self.signatureAlgorithm,
-        key,
-        self.acceptedIssuers,
-        self.acceptedAudiences
-    )
+    -- verify the whole token (or decode claims without signature verification)
+    local claims, msg;
+    if skip_sig_verify then
+        -- decode payload without verifying signature
+        local dotFirst = session.auth_token:find("%.");
+        if not dotFirst then return false, "not-allowed", "Invalid token" end
+        local dotSecond = session.auth_token:find("%.", dotFirst + 1);
+        if not dotSecond then return false, "not-allowed", "Invalid token" end
+        local payloadDecoded = basexx.from_url64(session.auth_token:sub(dotFirst + 1, dotSecond - 1));
+        if not payloadDecoded then return false, "not-allowed", "Invalid token" end
+        claims, msg = json_safe.decode(payloadDecoded);
+        if not claims then
+            return false, "not-allowed", msg or "bad token format";
+        end
+    else
+        claims, msg = jwt.verify(
+            session.auth_token,
+            self.signatureAlgorithm,
+            key,
+            self.acceptedIssuers,
+            self.acceptedAudiences
+        )
+    end
     if claims ~= nil then
-        if self.requireRoomClaim then
-            local roomClaim = claims["room"];
-            if roomClaim == nil then
-                return false, "'room' claim is missing";
+        -- If a verification URL is configured, the token must also be accepted by it.
+        -- This is an additional check on top of (or instead of) the shared secret.
+        if self.jwtVfyUrl then
+            local _, vfy_code = http_get_with_retry(self.jwtVfyUrl, nr_retries, session.auth_token);
+            if vfy_code ~= 200 and vfy_code ~= 204 then
+                return false, "not-allowed", "token rejected by verification endpoint";
             end
         end
 
+        -- Register token as used. Stored until its expiry so replayed tokens are
+        -- rejected even if the signature would otherwise still be valid.
+        local exp = claims["exp"];
+        usedTokens[token_hash] = exp or (os.time() + 3600);
+
+        if self.requireRoomClaim then
+            if claims["channel"] ~= nil then
+                claims["room"] = kiwi_util.encode_room_name(claims["iss"], claims["channel"])
+                module:log("debug", "room encoded from '%s/%s' to '%s'", claims["iss"], claims["channel"], claims["room"]);
+            else
+                claims["room"] = "*";
+                module:log("debug", "room maybe query");
+            end
+        end
+
+        local joined = claims["joined"];
+        if claims["channel"] ~= nil and (joined == nil or joined <= 0) then
+            return false, "not-allowed", "user is not member of the channel";
+        end
+
         -- Binds room name to the session which is later checked on MUC join
+        session.jitsi_meet_channel = claims["channel"];
         session.jitsi_meet_room = claims["room"];
         -- Binds domain name to the session
-        session.jitsi_meet_domain = claims["sub"];
+        session.jitsi_meet_domain = "meet.jitsi";
+
+        session.jitsi_meet_joined = claims["joined"];
+        session.jitsi_meet_issuer = claims["iss"];
+
+        session.jitsi_meet_affiliation = kiwi_util.get_kiwiirc_affiliation(claims);
+        module:log("debug", "token affiliation: '%s' for %s", session.jitsi_meet_affiliation, claims.sub);
+
+        claims["context"] = {};
+        claims["context"]["user"] = {};
+        claims["context"]["user"]["name"] = claims["sub"];
 
         -- Binds the user details to the session if available
         if claims["context"] ~= nil then
@@ -381,9 +473,22 @@ function Util:verify_room(session, room_address)
     -- extract room name using all chars, except the not allowed ones
     local room,_,_ = jid.split(room_address);
     if room == nil then
-        log("error",
-            "Unable to get name of the MUC room ? to: %s", room_address);
-        return true;
+        module:log('error', 'Unable to get name of the MUC room ? to: %s', room_address);
+        return false, 'invalid-room-address', 'Room address is invalid';
+    end
+
+    module:log("debug", "verify_room: '%s'", room)
+
+    -- kiwiirc: channel conferences verify the encoded room name directly;
+    -- query conferences (no channel) must match the query room name pattern
+    if session.jitsi_meet_channel ~= nil then
+        if session.jitsi_meet_room ~= room then
+            module:log("warn", "verify_room: Not matching '%s' ~= '%s'", session.jitsi_meet_room, room);
+            return false, 'room-mismatch', 'Room does not match the room from token';
+        end
+    elseif not room:match(query_pattern) then
+        module:log("warn", "verify_room: Not a query");
+        return false, 'room-mismatch', 'Room does not match the room from token';
     end
 
     local auth_room = session.jitsi_meet_room;
@@ -394,11 +499,11 @@ function Util:verify_room(session, room_address)
             module:log('warn', 'session.jitsi_meet_room not string: %s', inspect(auth_room));
         end
     end
+
     if not self.enableDomainVerification then
-        -- if auth_room is missing, this means user is anonymous (no token for
-        -- its domain) we let it through, jicofo is verifying creation domain
+        -- if auth_room is missing, this means user is anonymous (no token for its domain) we let it through
         if auth_room and (room ~= auth_room and not ends_with(room, ']'..auth_room)) and auth_room ~= '*' then
-            return false;
+            return false, 'room-mismatch', 'Room does not match the room from token';
         end
 
         return true;
@@ -438,7 +543,6 @@ function Util:verify_room(session, room_address)
             -- not a regex
             room_to_check = auth_room;
         end
-        -- module:log("debug", "room to check: %s", room_to_check)
         if not room_to_check then
             if not self.requireRoomClaim then
                 -- if we do not require to have the room claim, and it is missing
@@ -446,17 +550,18 @@ function Util:verify_room(session, room_address)
                 return true;
             end
 
-            return false;
+            return false, 'room-name-does-not-match', 'Room name cannot be matched to the one from token.';
         end
     end
 
     if session.jitsi_meet_str_tenant
         and string.lower(session.jitsi_meet_str_tenant) ~= session.jitsi_web_query_prefix then
+        session.jitsi_meet_tenant_mismatch = true;
+
         module:log('warn', 'Tenant differs for user:%s group:%s url_tenant:%s token_tenant:%s',
             session.jitsi_meet_context_user and session.jitsi_meet_context_user.id or '',
             session.jitsi_meet_context_group,
             session.jitsi_web_query_prefix, session.jitsi_meet_str_tenant);
-        session.jitsi_meet_tenant_mismatch = true;
     end
 
     local auth_domain = string.lower(session.jitsi_meet_domain);
@@ -473,7 +578,7 @@ function Util:verify_room(session, room_address)
         -- deny access if option is missing
         if not self.muc_domain_base then
             module:log("warn", "No 'muc_domain_base' option set, denying access!");
-            return false;
+            return false, 'server-missing-config', 'Misconfiguration of server';
         end
 
         return room_address_to_verify == jid.join(
