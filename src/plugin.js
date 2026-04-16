@@ -11,6 +11,12 @@ import JitsiMediaView from '@/components/JitsiMediaView.vue';
 kiwi.plugin('conference', (kiwi) => {
     config.setDefaults();
 
+    if (!config.setting('server')) {
+        // eslint-disable-next-line no-console
+        console.error('[plugin-conference] No Jitsi server configured. Set "plugin-conference.server" in your kiwi config.');
+        return;
+    }
+
     kiwi.addTranslations(config.configBase, translations);
 
     const tagID = config.getSetting('tagID').toString();

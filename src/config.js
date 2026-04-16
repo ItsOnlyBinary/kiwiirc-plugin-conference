@@ -4,7 +4,7 @@ export const configBase = 'plugin-conference';
 const defaultConfig = {
     tagID: 1,
     secure: false,
-    server: 'meet.jit.si',
+    server: '',
     queries: true,
     channels: true,
     buttonIcon: 'fa-phone',
@@ -64,6 +64,12 @@ const defaultConfig = {
 };
 
 export function setDefaults() {
+    const oldConfig = kiwi.state.getSetting('settings.conference');
+    if (oldConfig) {
+        // eslint-disable-next-line no-console, vue/max-len
+        console.warn('[DEPRECATION] Please update your conference plugin config to use "plugin-conference" as its object key');
+        kiwi.setConfigDefaults(configBase, oldConfig);
+    }
     kiwi.setConfigDefaults(configBase, defaultConfig);
 }
 

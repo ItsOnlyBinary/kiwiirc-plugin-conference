@@ -288,6 +288,8 @@ function scriptLoaded() {
                     return;
                 }
 
+                console.log('error', JSON.stringify(event));
+
                 const errMsg = event?.error?.message || 'unknown error occurred';
                 addLocalMessage(t('conferenceError', { error: errMsg }));
                 kiwi.emit('mediaviewer.hide');

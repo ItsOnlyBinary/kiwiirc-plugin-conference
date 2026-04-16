@@ -1,6 +1,6 @@
 local LOGLEVEL = "debug";
 
-local is_admin = require "core.usermanager".is_admin;
+local usermanager = require "core.usermanager";
 local is_healthcheck_room = module:require "util".is_healthcheck_room;
 local timer = require "util.timer";
 local st = require "util.stanza";
@@ -13,7 +13,11 @@ local query_pattern = kiwi_util.query_pattern();
 module:log(LOGLEVEL, "loaded");
 
 local function _is_admin(jid)
-    return is_admin(jid, module.host);
+    local roles = usermanager.get_roles and usermanager.get_roles(jid, module.host);
+    if roles then
+        return roles["prosody:operator"] or roles["prosody:admin"];
+    end
+    return usermanager.is_admin(jid, module.host);
 end
 
 module:hook("muc-occupant-pre-join", function(event)
