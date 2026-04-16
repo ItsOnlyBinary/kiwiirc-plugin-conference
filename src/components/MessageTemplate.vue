@@ -3,18 +3,20 @@
         <div class="plugin-conference-jointext">
             {{ buffer.isQuery() ? inviteText : joinText }}
         </div>
-        <button v-if="!pluginState.isActive" type="button" class="u-button u-button-primary" @click="openJitsi()">
+        <div v-if="!pluginState.isActive" class="u-button u-button-primary" role="button" @click="openJitsi()">
             <i aria-hidden="true" class="fa fa-phone" />
             <span class="plugin-conference-joinbutton">{{ joinButtonText }}</span>
-        </button>
+        </div>
     </div>
 </template>
 
 <script setup>
 /* global kiwi:true */
 import { computed } from 'vue';
-import JitsiMediaView from './JitsiMediaView.vue';
-import * as config from '../config.js';
+
+import JitsiMediaView from '@/components/JitsiMediaView.vue';
+import * as config from '@/config.js';
+import { t } from '@/translations.js';
 
 const props = defineProps({
     buffer: { type: Object, required: true },
@@ -33,7 +35,7 @@ const nicks = computed(() => {
         const nick = props.inviteState.members[i];
         length += nick.length;
         if (length > maxLength) {
-            showNicks.push(config.setting('participantsMore'));
+            showNicks.push(t('participantsMore'));
             break;
         }
         showNicks.push(nick);
@@ -41,9 +43,9 @@ const nicks = computed(() => {
     return showNicks;
 });
 
-const joinButtonText = computed(() => config.setting('joinButtonText'));
-const inviteText = computed(() => config.setting('inviteText').replace('{{ nick }}', nicks.value.join(', ')));
-const joinText = computed(() => config.setting('joinText').replace('{{ nick }}', nicks.value.join(', ')));
+const joinButtonText = computed(() => t('joinNow'));
+const inviteText = computed(() => t('inviteText', { nick: nicks.value.join(', ') }));
+const joinText = computed(() => t('joinText', { nick: nicks.value.join(', ') }));
 
 function openJitsi() {
     props.pluginState.isActive = true;

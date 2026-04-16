@@ -1,6 +1,6 @@
 /* global kiwi:true */
 
-const configBase = 'conference';
+export const configBase = 'plugin-conference';
 const defaultConfig = {
     tagID: 1,
     secure: false,
@@ -12,10 +12,6 @@ const defaultConfig = {
     enabledInChannels: ['*'],
     groupInvitesTTL: 30000,
     maxParticipantsLength: 60,
-    participantsMore: 'more...',
-    inviteText: '{{ nick }} is inviting you to a private call.',
-    joinText: '{{ nick }} has joined the conference.',
-    joinButtonText: 'Join now!',
     showLink: false,
     useLinkShortener: false,
     linkShortenerURL: 'https://x0.no/api/?{{ link }}',

@@ -1,13 +1,17 @@
 /* global kiwi:true */
 
-import * as config from './config.js';
+import * as config from '@/config.js';
 
-import HeaderButton from './components/HeaderButton.vue';
-import MessageTemplate from './components/MessageTemplate.vue';
-import JitsiMediaView from './components/JitsiMediaView.vue';
+import translations from '@/translations.js';
+
+import HeaderButton from '@/components/HeaderButton.vue';
+import MessageTemplate from '@/components/MessageTemplate.vue';
+import JitsiMediaView from '@/components/JitsiMediaView.vue';
 
 kiwi.plugin('conference', (kiwi) => {
     config.setDefaults();
+
+    kiwi.addTranslations(config.configBase, translations);
 
     const tagID = config.getSetting('tagID').toString();
 

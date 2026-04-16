@@ -25,17 +25,17 @@
                 </g>
             </svg>
         </div>
-        <div v-else-if="notSupported" class="p-conference-notsupported">
-            This browser is not supported.<br>Please update your browser.
-        </div>
+        <div v-else-if="notSupported" class="p-conference-notsupported" v-html="notSupportedText" />
     </div>
 </template>
 
 <script setup>
 /* global kiwi:true */
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
-import * as config from '../config.js';
-import * as utils from '../lib/utils.js';
+
+import * as config from '@/config.js';
+import * as utils from '@/lib/utils.js';
+import { t } from '@/translations.js';
 
 const emit = defineEmits(['setHeight']);
 const props = defineProps({
@@ -54,6 +54,7 @@ const notSupported = ref(false);
 
 const buffer = computed(() => props.componentProps.buffer);
 const network = computed(() => buffer.value.getNetwork());
+const notSupportedText = computed(() => t('notSupported').replace('\n', '<br>'));
 const roomName = computed(() => {
     if (buffer.value.isQuery()) {
         return [network.value.nick, buffer.value.name].sort().join('+');
@@ -161,9 +162,8 @@ function addLocalMessage(text) {
 }
 
 function sendJoinMessage() {
-    let msgText = buffer.value.isQuery() ? config.setting('inviteText') : config.setting('joinText');
-
-    msgText = '* ' + msgText.replace('{{ nick }}', network.value.nick);
+    const nick = network.value.nick;
+    let msgText = '* ' + (buffer.value.isQuery() ? t('inviteText', { nick }) : t('joinText', { nick }));
 
     if (config.setting('showLink') && link.value) {
         msgText += ' ' + link.value;
@@ -282,14 +282,14 @@ function scriptLoaded() {
                         token.value = await fetchToken();
                         scriptLoaded();
                     } catch (e) {
-                        addLocalMessage('Conference: failed to re-authenticate');
+                        addLocalMessage(t('conferenceFailedReauth'));
                         kiwi.emit('mediaviewer.hide');
                     }
                     return;
                 }
 
                 const errMsg = event?.error?.message || 'unknown error occurred';
-                addLocalMessage('Conference error: ' + errMsg);
+                addLocalMessage(t('conferenceError', { error: errMsg }));
                 kiwi.emit('mediaviewer.hide');
             });
         },
@@ -326,7 +326,7 @@ onMounted(async () => {
         try {
             token.value = await fetchToken();
         } catch (e) {
-            addLocalMessage('Conference: failed to obtain authentication token');
+            addLocalMessage(t('conferenceFailedToken'));
             isLoading.value = false;
             return;
         }

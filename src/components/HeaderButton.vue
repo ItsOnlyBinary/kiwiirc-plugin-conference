@@ -1,24 +1,21 @@
 <template>
     <div v-if="showButton" class="p-conference-button" :class="{ 'kiwi-header-option--active': pluginState.isActive }">
         <div v-if="closePrompt" class="p-conference-prompt">
-            <div>Close the current conference?</div>
+            <div>{{ $t('plugin-conference:closeConference') }}</div>
             <input-confirm :flip-connotation="true" @ok="closeConference()" @submit="hideToast()" />
         </div>
-        <button
-            type="button"
-            :aria-label="pluginState.isActive ? 'Close conference' : 'Open conference'"
-            @click="openConference()"
-        >
-            <i aria-hidden="true" :class="buttonIcon" class="fa" />
-        </button>
+        <div role="button" :title="buttonLabel" @click="openConference()">
+            <a :aria-label="buttonLabel"><i aria-hidden="true" :class="buttonIcon" class="fa" /></a>
+        </div>
     </div>
 </template>
 
 <script setup>
 /* global kiwi:true */
 import { ref, computed } from 'vue';
-import JitsiMediaView from './JitsiMediaView.vue';
-import * as config from '../config.js';
+import JitsiMediaView from '@/components/JitsiMediaView.vue';
+import { t } from '@/translations.js';
+import * as config from '@/config.js';
 
 const props = defineProps({
     network: { type: Object, required: true },
@@ -31,6 +28,11 @@ const closePrompt = ref(false);
 
 const showButton = computed(() => config.isAllowedBuffer(props.buffer));
 const buttonIcon = computed(() => config.setting('buttonIcon'));
+const buttonLabel = computed(() => t(
+    props.pluginState.isActive
+        ? 'endConference'
+        : 'startConference'
+));
 
 function openConference() {
     if (!props.pluginState.isActive) {
