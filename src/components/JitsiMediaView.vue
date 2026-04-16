@@ -61,9 +61,17 @@ const roomName = computed(() => {
     return buffer.value.name;
 });
 
+let unmounted = false;
+let scr = null;
+let abortController = null;
+
 let ircPartHandler;
 let ircQuitHandler;
 let ircKickHandler;
+
+// Stored at component scope so they can be cancelled in onBeforeUnmount
+let extJwtHandler = null;
+let extJwtTimeout = null;
 
 function setupIrcListeners() {
     const channelMatches = (event) => event.channel.toLowerCase() === buffer.value.name.toLowerCase();
@@ -108,27 +116,37 @@ function removeIrcListeners() {
     kiwi.off('irc.kick', ircKickHandler);
 }
 
+function cancelFetchToken() {
+    if (extJwtTimeout) {
+        clearTimeout(extJwtTimeout);
+        extJwtTimeout = null;
+    }
+    if (extJwtHandler) {
+        kiwi.off('irc.raw.EXTJWT', extJwtHandler);
+        extJwtHandler = null;
+    }
+}
+
 function fetchToken() {
     return new Promise((resolve, reject) => {
         let t = '';
-        let timeout = 0;
-        const handler = (command, message) => {
+
+        extJwtHandler = (command, message) => {
             if (message.params[2] === '*') {
                 t = message.params[3];
             } else {
                 t += message.params[2];
-                clearTimeout(timeout);
-                kiwi.off('irc.raw.EXTJWT', handler);
+                cancelFetchToken();
                 resolve(t);
             }
         };
 
-        timeout = setTimeout(() => {
-            kiwi.off('irc.raw.EXTJWT', handler);
+        extJwtTimeout = setTimeout(() => {
+            cancelFetchToken();
             reject(new Error('EXTJWT timeout'));
         }, 10000);
 
-        kiwi.on('irc.raw.EXTJWT', handler);
+        kiwi.on('irc.raw.EXTJWT', extJwtHandler);
         network.value.ircClient.raw('EXTJWT', buffer.value.isQuery() ? '*' : roomName.value);
     });
 }
@@ -157,32 +175,36 @@ function sendJoinMessage() {
     network.value.ircClient.raw(message);
 }
 
+function onLinkResolved(resolvedLink) {
+    link.value = resolvedLink;
+    if (isJoined.value) {
+        sendJoinMessage();
+    }
+}
+
 function getShortLink(shortURL, l) {
-    const requestURL = shortURL.replace('{{ link }}', l);
-    fetch(requestURL)
+    fetch(shortURL.replace('{{ link }}', l), { signal: abortController.signal })
         .then((r) => r.text())
         .then((result) => {
             const urlRegex = kiwi.require('helpers/TextFormatting').urlRegex;
             const isUrl = new RegExp('^' + urlRegex.source + '$');
-            if (isUrl.test(result)) {
-                link.value = result;
-            }
-            if (isJoined.value) {
-                sendJoinMessage();
-            }
+            onLinkResolved(isUrl.test(result) ? result : l);
+        })
+        .catch((err) => {
+            if (err.name === 'AbortError') return;
+            onLinkResolved(l);
         });
 }
 
 function getBitlyLink(bitlyURL, l) {
     const apiKey = config.setting('linkShortenerAPIToken');
     const requestURL = bitlyURL + '?access_token=' + apiKey + '&longUrl=' + l;
-    fetch(requestURL)
+    fetch(requestURL, { signal: abortController.signal })
         .then((r) => r.json())
-        .then((result) => {
-            link.value = result.url;
-            if (isJoined.value) {
-                sendJoinMessage();
-            }
+        .then((result) => onLinkResolved(result.url))
+        .catch((err) => {
+            if (err.name === 'AbortError') return;
+            onLinkResolved(l);
         });
 }
 
@@ -248,7 +270,6 @@ function scriptLoaded() {
             api.value.once('browserSupport', (event) => {
                 if (!event.supported) {
                     isLoading.value = false;
-                    isJoined.value = false;
                     notSupported.value = true;
                 }
             });
@@ -267,11 +288,7 @@ function scriptLoaded() {
                     return;
                 }
 
-                let errMsg = 'unknown error occurred';
-                if (event?.error?.message) {
-                    errMsg = event.error.message;
-                }
-
+                const errMsg = event?.error?.message || 'unknown error occurred';
                 addLocalMessage('Conference error: ' + errMsg);
                 kiwi.emit('mediaviewer.hide');
             });
@@ -287,10 +304,12 @@ function scriptLoaded() {
 
 function scriptLoad() {
     const roomNamePromise = utils.encodeRoomName(network.value.connection.server + '/' + roomName.value);
-    const scr = document.createElement('script');
+    scr = document.createElement('script');
     scr.src = 'https://' + config.setting('server') + '/external_api.js';
     scr.onload = async () => {
+        if (unmounted) return;
         const name = await roomNamePromise;
+        if (unmounted) return;
         encodedRoomName.value = buffer.value.isQuery() ? 'q-' + name : name;
         scriptLoaded();
     };
@@ -300,6 +319,7 @@ function scriptLoad() {
 
 onMounted(async () => {
     setupIrcListeners();
+    abortController = new AbortController();
     isLoading.value = true;
 
     if (config.setting('secure')) {
@@ -318,8 +338,18 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+    unmounted = true;
     props.componentProps.pluginState.isActive = false;
     removeIrcListeners();
+    cancelFetchToken();
+
+    if (scr) {
+        scr.onload = null;
+    }
+
+    if (abortController) {
+        abortController.abort();
+    }
 
     emit('setHeight', null);
 
