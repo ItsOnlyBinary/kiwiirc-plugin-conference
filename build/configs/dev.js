@@ -37,58 +37,6 @@ module.exports = (env, argv, config) => {
                     warnings: false,
                 },
             },
-            setupMiddlewares: (middlewares, devServer) => {
-                devServer.app.get(configPattern, async (req, res) => {
-                    if (configWatcher) {
-                        await configWatcher.close();
-                        configWatcher = null;
-                    }
-
-                    const configFiles = ['config.local.json', 'config.json'];
-                    const configMatch = req.url.match(configPattern)?.[1];
-                    if (configMatch) {
-                        configFiles.unshift(`config_${configMatch}.json`);
-                        configFiles.unshift(`config_${configMatch}.local.json`);
-                    }
-
-                    let configPath = null;
-                    for (const filePath of configFiles) {
-                        const resolvedPath = utils.pathResolve('static/', filePath);
-                        if (fs.existsSync(resolvedPath)) {
-                            configPath = resolvedPath;
-                            break;
-                        }
-                    }
-
-                    if (!configPath) {
-                        res.statusCode = 404;
-                        res.end('Not Found');
-                        return;
-                    }
-
-                    try {
-                        const config = fs.readFileSync(configPath);
-                        configWatcher = chokidar.watch(configPath);
-                        configWatcher.on(
-                            'change',
-                            (path) => devServer.sendMessage(
-                                devServer.webSocketServer.clients,
-                                'content-changed'
-                            ),
-                        );
-                        res.setHeader('Content-Type', 'application/json');
-                        res.setHeader('Cache-Control', 'no-store');
-                        res.setHeader('Pragma', 'no-cache');
-                        res.setHeader('Expires', '0');
-                        res.end(config);
-                    } catch (err) {
-                        res.statusCode = 500;
-                        res.end('Internal Server Error');
-                    }
-                });
-
-                return middlewares;
-            },
         },
 
         infrastructureLogging: {

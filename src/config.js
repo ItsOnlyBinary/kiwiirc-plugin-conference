@@ -62,6 +62,8 @@ let defaultConfig = {
     configOverwrite: {
         startWithVideoMuted: true,
         startWithAudioMuted: true,
+        disableTileView: true,
+        disableTileEnlargement: true,
     },
 };
 

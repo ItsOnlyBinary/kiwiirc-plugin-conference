@@ -86,6 +86,7 @@ export default {
         });
     },
     beforeUnmount() {
+        console.log('beforeUnmount');
         this.componentProps.pluginState.isActive = false;
         this.removeIrcListeners();
 
@@ -184,13 +185,9 @@ export default {
             this.$el.appendChild(scr);
         },
         scriptLoaded() {
-            let configOverwrite = {
-                disableTileView: true,
-                disableTileEnlargement: true,
-                hideConferenceSubject: true,
-            };
-
+            const configOverwrite = {};
             Object.assign(configOverwrite, config.setting('configOverwrite'), {
+                hideConferenceSubject: true,
                 prejoinPageEnabled: false,
                 prejoinConfig: {
                     enabled: false,
