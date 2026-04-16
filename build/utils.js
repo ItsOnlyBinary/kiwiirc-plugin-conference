@@ -2,7 +2,7 @@ const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 
-module.exports.pathResolve = (...args) => path.resolve(process.cwd(), ...args);
+module.exports.pathResolve = (...args) => path.posix.join(process.cwd(), ...args);
 
 module.exports.getCommitHash = () => {
     let commitHash = 'unknown';
@@ -12,8 +12,8 @@ module.exports.getCommitHash = () => {
         if (modified.trim() === 'true') {
             commitHash += '-modified';
         }
-    } catch {
-        console.error('Failed to get commit hash');
+    } catch (err) {
+        console.error('Failed to get commit hash:', err);
     }
     return commitHash;
 };

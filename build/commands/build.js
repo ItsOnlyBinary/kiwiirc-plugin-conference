@@ -1,18 +1,19 @@
 const webpack = require('webpack');
 const minimist = require('minimist');
-const ora = require('ora');
-const chalk = require('chalk');
-const cliui = require('cliui');
 const { rimraf } = require('rimraf');
 
 const utils = require('../utils');
 const webpackConfigFunc = require('../../webpack.config');
 
 const argv = minimist(process.argv.slice(2));
-const spinner = ora();
 
 (async () => {
+    const ora = await import('ora').then((m) => m.default);
+    const chalk = await import('chalk').then((m) => m.default);
+    const cliui = await import('cliui').then((m) => m.default);
     const webpackConfig = await webpackConfigFunc({}, argv);
+
+    const spinner = ora();
 
     console.log();
     spinner.text = `Building for ${webpackConfig.mode}...`;
@@ -31,6 +32,17 @@ const spinner = ora();
 
             if (stats.hasErrors()) {
                 process.exit(1);
+            }
+
+            const statsOutput = stats.toString({
+                all: false,
+                colors: true,
+                logging: 'info',
+                loggingTrace: true,
+            });
+
+            if (statsOutput) {
+                process.stdout.write(`${statsOutput}\n\n`);
             }
 
             const getCompressedAsset = (asset, type) => {
@@ -105,13 +117,15 @@ const spinner = ora();
             out.forEach((row, rowIdx) => {
                 table.div(
                     ...row.map((col, colIdx) => ({
-                        text: (rowIdx === 0 || (rowIdx === out.length - 1 && colIdx === 0))
-                            ? chalk.cyan.bold(col)
-                            : col,
+                        text:
+                            rowIdx === 0 || (rowIdx === out.length - 1 && colIdx === 0)
+                                ? chalk.cyan.bold(col)
+                                : col,
                         width: colWidths[colIdx],
-                        padding: (rowIdx === 0 || rowIdx === out.length - 2)
-                            ? [0, 0, 1, 3]
-                            : [0, 0, 0, 3],
+                        padding:
+                            rowIdx === 0 || rowIdx === out.length - 2
+                                ? [0, 0, 1, 3]
+                                : [0, 0, 0, 3],
                     }))
                 );
             });

@@ -1,5 +1,6 @@
 <template>
     <div class="p-conference-jitsi">
+        <div v-if="isJoined" class="p-conference-overlay">{{ roomName }} @ {{ network.name }}</div>
         <div v-if="isLoading" class="p-conference-loading">
             <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
                 <g>
@@ -23,14 +24,13 @@
             </svg>
         </div>
         <div v-else-if="notSupported" class="p-conference-notsupported">
-            This browser is not supported.<br />Please update your browser.
+            This browser is not supported.<br>Please update your browser.
         </div>
     </div>
 </template>
 
 <script>
 /* global kiwi:true */
-import platform from 'platform';
 import * as config from '../config.js';
 import * as utils from '../lib/utils.js';
 
@@ -64,11 +64,6 @@ export default {
         },
     },
     async mounted() {
-        if (platform.name === 'IE') {
-            this.notSupported = true;
-            return;
-        }
-
         this.setupIrcListeners();
         this.isLoading = true;
 
@@ -90,7 +85,7 @@ export default {
             this.$parent.setHeight(config.setting('viewHeight'));
         });
     },
-    beforeDestroy() {
+    beforeUnmount() {
         this.componentProps.pluginState.isActive = false;
         this.removeIrcListeners();
 
@@ -192,17 +187,21 @@ export default {
             let configOverwrite = {
                 disableTileView: true,
                 disableTileEnlargement: true,
+                hideConferenceSubject: true,
             };
 
-            Object.assign(configOverwrite, config.setting('configOverwrite'));
-
-            configOverwrite.subject = `${this.roomName} @ ${this.network.name}`;
-
-            // Disable prejoin page as we are setting the users nick
-            configOverwrite.prejoinPageEnabled = false;
-            configOverwrite.prejoinConfig = {
-                enabled: false,
-            };
+            Object.assign(configOverwrite, config.setting('configOverwrite'), {
+                prejoinPageEnabled: false,
+                prejoinConfig: {
+                    enabled: false,
+                },
+                gravatar: {
+                    disabled: true,
+                },
+                p2p: {
+                    enabled: false,
+                },
+            });
 
             if (config.setting('showLink') && !this.link) {
                 this.getLink();
@@ -213,13 +212,12 @@ export default {
                 roomName: this.encodedRoomName,
                 userInfo: {
                     displayName: this.network.nick,
+                    ...(this.buffer.isQuery() && { email: this.buffer.name }),
                 },
                 parentNode: this.$el,
                 configOverwrite: configOverwrite,
                 interfaceConfigOverwrite: config.setting('interfaceConfigOverwrite'),
                 onload: () => {
-                    this.api.executeCommand('toggleTileView');
-
                     this.api.addEventListener('videoConferenceJoined', () => {
                         this.isJoined = true;
                         this.isLoading = false;
@@ -242,9 +240,6 @@ export default {
                     });
 
                     this.api.addEventListener('errorOccurred', async (event) => {
-                        if (!event?.error?.message) {
-                            return;
-                        }
                         if (event?.error?.message === 'Token expired') {
                             this.api.dispose();
                             this.api = null;
@@ -255,9 +250,16 @@ export default {
                                 this.addLocalMessage('Conference: failed to re-authenticate');
                                 kiwi.emit('mediaviewer.hide');
                             }
-                        } else {
-                            this.addLocalMessage('plugin-conference error: ' + event.error.message);
+                            return;
                         }
+
+                        let errMsg = 'unknown error occurred';
+                        if (event?.error?.message) {
+                            errMsg = event.error.message;
+                        }
+
+                        this.addLocalMessage('Conference error: ' + errMsg);
+                        kiwi.emit('mediaviewer.hide');
                     });
                 },
             };
@@ -336,6 +338,16 @@ export default {
     overflow: hidden;
 }
 
+.p-conference-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 10;
+    padding: 6px 6px 2px 6px;
+    color: #fff;
+    background-color: rgb(0, 0, 0, 0.2);
+}
+
 .p-conference-loading {
     position: absolute;
     inset: 0;
@@ -343,7 +355,7 @@ export default {
     align-items: center;
     justify-content: center;
     padding: 20px;
-    background-color: rgba(0, 0, 0, 0.6);
+    background-color: rgb(0, 0, 0, 0.6);
 
     > svg {
         width: min(max(20vb, 80px), 200px);
