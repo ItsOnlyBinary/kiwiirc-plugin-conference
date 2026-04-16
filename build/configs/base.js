@@ -1,4 +1,3 @@
-const webpack = require('webpack');
 const { merge } = require('webpack-merge');
 
 const ESLintPlugin = require('eslint-webpack-plugin');

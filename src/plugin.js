@@ -9,13 +9,13 @@ import JitsiMediaView from './components/JitsiMediaView.vue';
 kiwi.plugin('conference', (kiwi) => {
     config.setDefaults();
 
-    let tagID = config.getSetting('tagID').toString();
+    const tagID = config.getSetting('tagID').toString();
 
-    let pluginState = {
+    const pluginState = {
         isActive: false,
     };
 
-    let activeInviteStates = {
+    const activeInviteStates = {
         // bufferName: {
         //     members: ['nick1', 'nick2'],
         //     timeout: 12345,
@@ -43,7 +43,7 @@ kiwi.plugin('conference', (kiwi) => {
         kiwi.emit('mediaviewer.show', {
             component: JitsiMediaView,
             componentProps: {
-                pluginState: pluginState,
+                pluginState,
                 buffer: event.buffer,
             },
         });
@@ -67,7 +67,7 @@ kiwi.plugin('conference', (kiwi) => {
             bufferName = event.nick;
         }
 
-        let inviteState = activeInviteStates[bufferName.toUpperCase()];
+        const inviteState = activeInviteStates[bufferName.toUpperCase()];
         if (inviteState && inviteState.timeout + config.setting('groupInvitesTTL') > Date.now()) {
             if (inviteState.members.indexOf(event.nick) === -1) {
                 // Add this nick to the existing invite component
@@ -81,13 +81,13 @@ kiwi.plugin('conference', (kiwi) => {
 
     // Listen for new conference message and replace with our component
     kiwi.on('message.new', (event) => {
-        let message = event.message;
-        let buffer = event.buffer;
+        const message = event.message;
+        const buffer = event.buffer;
         if (!isConference(message.tags)) {
             return;
         }
 
-        let inviteState = kiwi.Vue.observable({
+        const inviteState = kiwi.Vue.observable({
             members: [message.nick],
             timeout: Date.now(),
         });

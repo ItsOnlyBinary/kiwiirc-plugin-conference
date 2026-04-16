@@ -98,14 +98,14 @@ export default [
             ],
             'object-shorthand': ['error', 'always'],
             'prefer-const': 'error',
-            'prefer-destructuring': 'error',
+            'prefer-destructuring': 'off',
 
             /*
                 Import Rules
             */
             'import/extensions': ['error', 'ignorePackages', {
-                js: 'never',
-                vue: 'never',
+                js: 'always',
+                vue: 'always',
             }],
             'import/no-cycle': 'off',
             'import/no-unresolved': ['error', {
@@ -162,7 +162,7 @@ export default [
             }],
             '@stylistic/multiline-ternary': ['error', 'always-multiline'],
             '@stylistic/no-extra-parens': ['error', 'all', {
-                enforceForNewInMemberExpressions: false,
+                ignoredNodes: ['NewExpression > MemberExpression'],
                 nestedBinaryExpressions: false,
             }],
             '@stylistic/object-curly-spacing': ['error', 'always'],
@@ -202,64 +202,64 @@ export default [
 
     },
 
-    {
-        ignores: [],
-        linterOptions: {
-            reportUnusedDisableDirectives: 'off',
-        },
-        rules: {
-            'no-else-return': 'off',
-            'no-use-before-define': 'off',
-            'object-shorthand': 'off',
-            'prefer-const': 'off',
-            'prefer-destructuring': 'off',
+    // {
+    //     ignores: [],
+    //     linterOptions: {
+    //         reportUnusedDisableDirectives: 'off',
+    //     },
+    //     rules: {
+    //         'no-else-return': 'off',
+    //         'no-use-before-define': 'off',
+    //         'object-shorthand': 'off',
+    //         'prefer-const': 'off',
+    //         'prefer-destructuring': 'off',
 
-            /*
-                Import Rules
-            */
-            'import/extensions': 'off',
+    //         /*
+    //             Import Rules
+    //         */
+    //         'import/extensions': 'off',
 
-            /*
-                Vue Rules
-            */
-            'vue/max-attributes-per-line': 'off',
-            'vue/max-len': ['error', {
-                code: 120,
-                comments: 120,
-                ignoreRegExpLiterals: true,
-                ignoreStrings: true,
-                ignoreTemplateLiterals: true,
-                ignoreUrls: true,
-                tabWidth: 4,
-                template: 120,
-            }],
-            'vue/multi-word-component-names': 'off',
-            'vue/multiline-html-element-content-newline': 'off',
-            'vue/no-unused-components': 'off',
-            'vue/one-component-per-file': 'off',
-            'vue/require-default-prop': 'off',
-            'vue/require-explicit-emits': 'off',
-            'vue/require-prop-types': 'off',
-            'vue/singleline-html-element-content-newline': 'off',
-            'vue/v-on-event-hyphenation': 'off',
+    //         /*
+    //             Vue Rules
+    //         */
+    //         'vue/max-attributes-per-line': 'off',
+    //         'vue/max-len': ['error', {
+    //             code: 120,
+    //             comments: 120,
+    //             ignoreRegExpLiterals: true,
+    //             ignoreStrings: true,
+    //             ignoreTemplateLiterals: true,
+    //             ignoreUrls: true,
+    //             tabWidth: 4,
+    //             template: 120,
+    //         }],
+    //         'vue/multi-word-component-names': 'off',
+    //         'vue/multiline-html-element-content-newline': 'off',
+    //         'vue/no-unused-components': 'off',
+    //         'vue/one-component-per-file': 'off',
+    //         'vue/require-default-prop': 'off',
+    //         'vue/require-explicit-emits': 'off',
+    //         'vue/require-prop-types': 'off',
+    //         'vue/singleline-html-element-content-newline': 'off',
+    //         'vue/v-on-event-hyphenation': 'off',
 
-            /*
-                Stylistic Rules
-            */
-            '@stylistic/multiline-ternary': 'off',
-            '@stylistic/no-extra-parens': 'off',
-            '@stylistic/operator-linebreak': 'off',
+    //         /*
+    //             Stylistic Rules
+    //         */
+    //         '@stylistic/multiline-ternary': 'off',
+    //         '@stylistic/no-extra-parens': 'off',
+    //         '@stylistic/operator-linebreak': 'off',
 
-            /*
-                Accessibility Rules
-            */
-            'vuejs-accessibility/anchor-has-content': 'off',
-            'vuejs-accessibility/form-control-has-label': 'off',
-            'vuejs-accessibility/iframe-has-title': 'off',
-            'vuejs-accessibility/label-has-for': 'off',
-            'vuejs-accessibility/no-static-element-interactions': 'off',
-        },
-    },
+    //         /*
+    //             Accessibility Rules
+    //         */
+    //         'vuejs-accessibility/anchor-has-content': 'off',
+    //         'vuejs-accessibility/form-control-has-label': 'off',
+    //         'vuejs-accessibility/iframe-has-title': 'off',
+    //         'vuejs-accessibility/label-has-for': 'off',
+    //         'vuejs-accessibility/no-static-element-interactions': 'off',
+    //     },
+    // },
 
     {
         files: ['eslint.config.mjs', '*.js', 'build/**/*.js'],

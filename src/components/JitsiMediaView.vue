@@ -1,6 +1,8 @@
 <template>
-    <div class="p-conference-jitsi">
-        <div v-if="isJoined" class="p-conference-overlay">{{ roomName }} @ {{ network.name }}</div>
+    <div ref="el" class="p-conference-jitsi">
+        <div v-if="isJoined" class="p-conference-overlay">
+            {{ roomName }} @ {{ network.name }}
+        </div>
         <div v-if="isLoading" class="p-conference-loading">
             <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
                 <g>
@@ -29,302 +31,299 @@
     </div>
 </template>
 
-<script>
+<script setup>
 /* global kiwi:true */
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import * as config from '../config.js';
 import * as utils from '../lib/utils.js';
 
-export default {
-    props: ['componentProps'],
-    data() {
-        return {
-            api: null,
-            link: '',
-            token: '',
-            encodedRoomName: '',
-            isJoined: false,
-            isLoading: false,
-            notSupported: false,
-        };
-    },
-    computed: {
-        roomName() {
-            if (this.buffer.isQuery()) {
-                let members = [this.network.nick, this.buffer.name];
-                members.sort();
-                return members.join('+');
-            }
-            return this.buffer.name;
-        },
-        buffer() {
-            return this.componentProps.buffer;
-        },
-        network() {
-            return this.buffer.getNetwork();
-        },
-    },
-    async mounted() {
-        this.setupIrcListeners();
-        this.isLoading = true;
+const emit = defineEmits(['setHeight']);
+const props = defineProps(['componentProps']);
 
-        if (config.setting('secure')) {
-            try {
-                this.token = await this.fetchToken();
-            } catch (e) {
-                this.addLocalMessage('Conference: failed to obtain authentication token');
-                this.isLoading = false;
-                return;
-            }
+const el = ref(null);
+
+const api = ref(null);
+const link = ref('');
+const token = ref('');
+const encodedRoomName = ref('');
+const isJoined = ref(false);
+const isLoading = ref(false);
+const notSupported = ref(false);
+
+const buffer = computed(() => props.componentProps.buffer);
+const network = computed(() => buffer.value.getNetwork());
+const roomName = computed(() => {
+    if (buffer.value.isQuery()) {
+        return [network.value.nick, buffer.value.name].sort().join('+');
+    }
+    return buffer.value.name;
+});
+
+let ircPartHandler;
+let ircQuitHandler;
+let ircKickHandler;
+
+function setupIrcListeners() {
+    const channelMatches = (event) => event.channel.toLowerCase() === buffer.value.name.toLowerCase();
+    const isOwnNick = (nick) => nick.toLowerCase() === network.value.nick.toLowerCase();
+    const networkMatches = (net) => net === network.value;
+
+    ircPartHandler = (event, net) => {
+        if (!networkMatches(net) || buffer.value.isQuery()) {
+            return;
         }
-
-        this.scriptLoad();
-
-        // MediaViewer also sets a height on mounted()
-        // and is called after this mounted()
-        this.$nextTick(() => {
-            this.$parent.setHeight(config.setting('viewHeight'));
-        });
-    },
-    beforeUnmount() {
-        console.log('beforeUnmount');
-        this.componentProps.pluginState.isActive = false;
-        this.removeIrcListeners();
-
-        let mediaviewer = this.$el.parentElement;
-        if (mediaviewer) {
-            mediaviewer.style.height = '';
+        if (channelMatches(event) && isOwnNick(event.nick)) {
+            kiwi.emit('mediaviewer.hide');
         }
+    };
 
-        if (this.api) {
-            this.api.dispose();
+    ircQuitHandler = (event, net) => {
+        if (!networkMatches(net)) {
+            return;
         }
-    },
-    methods: {
-        setupIrcListeners() {
-            const channelMatches = (event) => event.channel.toLowerCase() === this.buffer.name.toLowerCase();
-            const isOwnNick = (nick) => nick.toLowerCase() === this.network.nick.toLowerCase();
-            const networkMatches = (network) => network === this.network;
+        if (isOwnNick(event.nick)) {
+            kiwi.emit('mediaviewer.hide');
+        }
+    };
 
-            this.ircPartHandler = (event, network, ircEventObj) => {
-                if (!networkMatches(network) || this.buffer.isQuery()) {
-                    return;
-                }
-                if (channelMatches(event) && isOwnNick(event.nick)) {
-                    kiwi.emit('mediaviewer.hide');
-                }
-            };
+    ircKickHandler = (event, net) => {
+        if (!networkMatches(net) || buffer.value.isQuery()) {
+            return;
+        }
+        if (channelMatches(event) && isOwnNick(event.kicked)) {
+            kiwi.emit('mediaviewer.hide');
+        }
+    };
 
-            this.ircQuitHandler = (event, network, ircEventObj) => {
-                if (!networkMatches(network)) {
-                    return;
-                }
-                if (isOwnNick(event.nick)) {
-                    kiwi.emit('mediaviewer.hide');
-                }
-            };
+    kiwi.on('irc.part', ircPartHandler);
+    kiwi.on('irc.quit', ircQuitHandler);
+    kiwi.on('irc.kick', ircKickHandler);
+}
 
-            this.ircKickHandler = (event, network, ircEventObj) => {
-                if (!networkMatches(network) || this.buffer.isQuery()) {
-                    return;
-                }
-                if (channelMatches(event) && isOwnNick(event.kicked)) {
-                    kiwi.emit('mediaviewer.hide');
-                }
-            };
+function removeIrcListeners() {
+    kiwi.off('irc.part', ircPartHandler);
+    kiwi.off('irc.quit', ircQuitHandler);
+    kiwi.off('irc.kick', ircKickHandler);
+}
 
-            kiwi.on('irc.part', this.ircPartHandler);
-            kiwi.on('irc.quit', this.ircQuitHandler);
-            kiwi.on('irc.kick', this.ircKickHandler);
-        },
-        removeIrcListeners() {
-            kiwi.off('irc.part', this.ircPartHandler);
-            kiwi.off('irc.quit', this.ircQuitHandler);
-            kiwi.off('irc.kick', this.ircKickHandler);
-        },
-        fetchToken() {
-            return new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    kiwi.off('irc.raw.EXTJWT', handler);
-                    reject(new Error('EXTJWT timeout'));
-                }, 10000);
+function fetchToken() {
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            kiwi.off('irc.raw.EXTJWT', handler);
+            reject(new Error('EXTJWT timeout'));
+        }, 10000);
 
-                let token = '';
-                const handler = (command, message) => {
-                    if (message.params[2] === '*') {
-                        token = message.params[3];
-                    } else {
-                        token += message.params[2];
-                        clearTimeout(timeout);
-                        kiwi.off('irc.raw.EXTJWT', handler);
-                        resolve(token);
-                    }
-                };
-
-                kiwi.on('irc.raw.EXTJWT', handler);
-                this.network.ircClient.raw('EXTJWT', this.buffer.isQuery() ? '*' : this.roomName);
-            });
-        },
-        addLocalMessage(text) {
-            kiwi.state.addMessage(this.buffer, {
-                time: Date.now(),
-                nick: '',
-                message: text,
-                type: 'error',
-            });
-        },
-        scriptLoad() {
-            const roomNamePromise = utils.encodeRoomName(this.network.connection.server + '/' + this.roomName);
-            let scr = document.createElement('script');
-            scr.src = 'https://' + config.setting('server') + '/external_api.js';
-            scr.onload = async () => {
-                const roomName = await roomNamePromise;
-                this.encodedRoomName = (this.buffer.isQuery()) ? 'q-' + roomName : roomName;
-                this.scriptLoaded();
-            };
-            scr.defer = true;
-            this.$el.appendChild(scr);
-        },
-        scriptLoaded() {
-            const configOverwrite = {};
-            Object.assign(configOverwrite, config.setting('configOverwrite'), {
-                hideConferenceSubject: true,
-                prejoinPageEnabled: false,
-                prejoinConfig: {
-                    enabled: false,
-                },
-                gravatar: {
-                    disabled: true,
-                },
-                p2p: {
-                    enabled: false,
-                },
-            });
-
-            if (config.setting('showLink') && !this.link) {
-                this.getLink();
-            }
-
-            let domain = config.setting('server');
-            let options = {
-                roomName: this.encodedRoomName,
-                userInfo: {
-                    displayName: this.network.nick,
-                    ...(this.buffer.isQuery() && { email: this.buffer.name }),
-                },
-                parentNode: this.$el,
-                configOverwrite: configOverwrite,
-                interfaceConfigOverwrite: config.setting('interfaceConfigOverwrite'),
-                onload: () => {
-                    this.api.addEventListener('videoConferenceJoined', () => {
-                        this.isJoined = true;
-                        this.isLoading = false;
-
-                        if (!config.setting('showLink') || this.link) {
-                            this.sendJoinMessage();
-                        }
-                    });
-
-                    this.api.addEventListener('videoConferenceLeft', () => {
-                        kiwi.emit('mediaviewer.hide');
-                    });
-
-                    this.api.once('browserSupport', (event) => {
-                        if (!event.supported) {
-                            this.isLoading = false;
-                            this.isJoined = false;
-                            this.notSupported = true;
-                        }
-                    });
-
-                    this.api.addEventListener('errorOccurred', async (event) => {
-                        if (event?.error?.message === 'Token expired') {
-                            this.api.dispose();
-                            this.api = null;
-                            try {
-                                this.token = await this.fetchToken();
-                                this.scriptLoaded();
-                            } catch (e) {
-                                this.addLocalMessage('Conference: failed to re-authenticate');
-                                kiwi.emit('mediaviewer.hide');
-                            }
-                            return;
-                        }
-
-                        let errMsg = 'unknown error occurred';
-                        if (event?.error?.message) {
-                            errMsg = event.error.message;
-                        }
-
-                        this.addLocalMessage('Conference error: ' + errMsg);
-                        kiwi.emit('mediaviewer.hide');
-                    });
-                },
-            };
-
-            if (config.setting('secure')) {
-                options.jwt = this.token;
-            }
-
-            this.api = new window.JitsiMeetExternalAPI(domain, options);
-        },
-        sendJoinMessage() {
-            let msgText = this.buffer.isQuery() ? config.setting('inviteText') : config.setting('joinText');
-
-            msgText = '* ' + msgText.replace('{{ nick }}', this.network.nick);
-
-            if (config.setting('showLink') && this.link) {
-                msgText += ' ' + this.link;
-            }
-
-            let message = new this.network.ircClient.Message('PRIVMSG', this.buffer.name, msgText);
-            message.prefix = this.network.nick;
-            message.tags['+kiwiirc.com/conference'] = config.getSetting('tagID');
-            this.network.ircClient.raw(message);
-        },
-        getLink() {
-            let link = 'https://' + config.setting('server') + '/' + this.encodedRoomName;
-            if (!config.setting('useLinkShortener')) {
-                this.link = link;
-                return;
-            }
-
-            let shortURL = config.setting('linkShortenerURL');
-            if (shortURL.indexOf('api-ssl.bitly.com') > -1) {
-                this.getBitlyLink(shortURL, link);
+        let t = '';
+        const handler = (command, message) => {
+            if (message.params[2] === '*') {
+                t = message.params[3];
             } else {
-                this.getShortLink(shortURL, link);
+                t += message.params[2];
+                clearTimeout(timeout);
+                kiwi.off('irc.raw.EXTJWT', handler);
+                resolve(t);
             }
+        };
+
+        kiwi.on('irc.raw.EXTJWT', handler);
+        network.value.ircClient.raw('EXTJWT', buffer.value.isQuery() ? '*' : roomName.value);
+    });
+}
+
+function addLocalMessage(text) {
+    kiwi.state.addMessage(buffer.value, {
+        time: Date.now(),
+        nick: '',
+        message: text,
+        type: 'error',
+    });
+}
+
+function scriptLoaded() {
+    const configOverwrite = {};
+    Object.assign(configOverwrite, config.setting('configOverwrite'), {
+        hideConferenceSubject: true,
+        prejoinPageEnabled: false,
+        prejoinConfig: {
+            enabled: false,
         },
-        getShortLink(shortURL, link) {
-            let requestURL = shortURL.replace('{{ link }}', link);
-            fetch(requestURL)
-                .then((r) => r.text())
-                .then((result) => {
-                    let urlRegex = kiwi.require('helpers/TextFormatting').urlRegex;
-                    let isUrl = new RegExp('^' + urlRegex.source + '$');
-                    // catch any issues by making sure the result is a url
-                    if (isUrl.test(result)) {
-                        this.link = result;
-                    }
-                    if (this.isJoined) {
-                        this.sendJoinMessage();
-                    }
-                });
+        gravatar: {
+            disabled: true,
         },
-        getBitlyLink(bitlyURL, link) {
-            let apiKey = config.setting('linkShortenerAPIToken');
-            let requestURL = bitlyURL + '?access_token=' + apiKey + '&longUrl=' + link;
-            fetch(requestURL)
-                .then((r) => r.json())
-                .then((result) => {
-                    this.link = result.url;
-                    if (this.isJoined) {
-                        this.sendJoinMessage();
-                    }
-                });
+        p2p: {
+            enabled: false,
         },
-    },
-};
+    });
+
+    if (config.setting('showLink') && !link.value) {
+        getLink();
+    }
+
+    const domain = config.setting('server');
+    const options = {
+        roomName: encodedRoomName.value,
+        userInfo: {
+            displayName: network.value.nick,
+            ...buffer.value.isQuery() && { email: buffer.value.name },
+        },
+        parentNode: el.value,
+        configOverwrite,
+        interfaceConfigOverwrite: config.setting('interfaceConfigOverwrite'),
+        onload: () => {
+            api.value.addEventListener('videoConferenceJoined', () => {
+                isJoined.value = true;
+                isLoading.value = false;
+
+                if (!config.setting('showLink') || link.value) {
+                    sendJoinMessage();
+                }
+            });
+
+            api.value.addEventListener('videoConferenceLeft', () => {
+                kiwi.emit('mediaviewer.hide');
+            });
+
+            api.value.once('browserSupport', (event) => {
+                if (!event.supported) {
+                    isLoading.value = false;
+                    isJoined.value = false;
+                    notSupported.value = true;
+                }
+            });
+
+            api.value.addEventListener('errorOccurred', async (event) => {
+                if (event?.error?.message === 'Token expired') {
+                    api.value.dispose();
+                    api.value = null;
+                    try {
+                        token.value = await fetchToken();
+                        scriptLoaded();
+                    } catch (e) {
+                        addLocalMessage('Conference: failed to re-authenticate');
+                        kiwi.emit('mediaviewer.hide');
+                    }
+                    return;
+                }
+
+                let errMsg = 'unknown error occurred';
+                if (event?.error?.message) {
+                    errMsg = event.error.message;
+                }
+
+                addLocalMessage('Conference error: ' + errMsg);
+                kiwi.emit('mediaviewer.hide');
+            });
+        },
+    };
+
+    if (config.setting('secure')) {
+        options.jwt = token.value;
+    }
+
+    api.value = new window.JitsiMeetExternalAPI(domain, options);
+}
+
+function scriptLoad() {
+    const roomNamePromise = utils.encodeRoomName(network.value.connection.server + '/' + roomName.value);
+    const scr = document.createElement('script');
+    scr.src = 'https://' + config.setting('server') + '/external_api.js';
+    scr.onload = async () => {
+        const name = await roomNamePromise;
+        encodedRoomName.value = buffer.value.isQuery() ? 'q-' + name : name;
+        scriptLoaded();
+    };
+    scr.defer = true;
+    el.value.appendChild(scr);
+}
+
+function sendJoinMessage() {
+    let msgText = buffer.value.isQuery() ? config.setting('inviteText') : config.setting('joinText');
+
+    msgText = '* ' + msgText.replace('{{ nick }}', network.value.nick);
+
+    if (config.setting('showLink') && link.value) {
+        msgText += ' ' + link.value;
+    }
+
+    const message = new network.value.ircClient.Message('PRIVMSG', buffer.value.name, msgText);
+    message.prefix = network.value.nick;
+    message.tags['+kiwiirc.com/conference'] = config.getSetting('tagID');
+    network.value.ircClient.raw(message);
+}
+
+function getLink() {
+    const l = 'https://' + config.setting('server') + '/' + encodedRoomName.value;
+    if (!config.setting('useLinkShortener')) {
+        link.value = l;
+        return;
+    }
+
+    const shortURL = config.setting('linkShortenerURL');
+    if (shortURL.indexOf('api-ssl.bitly.com') > -1) {
+        getBitlyLink(shortURL, l);
+    } else {
+        getShortLink(shortURL, l);
+    }
+}
+
+function getShortLink(shortURL, l) {
+    const requestURL = shortURL.replace('{{ link }}', l);
+    fetch(requestURL)
+        .then((r) => r.text())
+        .then((result) => {
+            const urlRegex = kiwi.require('helpers/TextFormatting').urlRegex;
+            const isUrl = new RegExp('^' + urlRegex.source + '$');
+            if (isUrl.test(result)) {
+                link.value = result;
+            }
+            if (isJoined.value) {
+                sendJoinMessage();
+            }
+        });
+}
+
+function getBitlyLink(bitlyURL, l) {
+    const apiKey = config.setting('linkShortenerAPIToken');
+    const requestURL = bitlyURL + '?access_token=' + apiKey + '&longUrl=' + l;
+    fetch(requestURL)
+        .then((r) => r.json())
+        .then((result) => {
+            link.value = result.url;
+            if (isJoined.value) {
+                sendJoinMessage();
+            }
+        });
+}
+
+onMounted(async () => {
+    setupIrcListeners();
+    isLoading.value = true;
+
+    if (config.setting('secure')) {
+        try {
+            token.value = await fetchToken();
+        } catch (e) {
+            addLocalMessage('Conference: failed to obtain authentication token');
+            isLoading.value = false;
+            return;
+        }
+    }
+
+    scriptLoad();
+
+    nextTick(() => emit('setHeight', config.setting('viewHeight')));
+});
+
+onBeforeUnmount(() => {
+    props.componentProps.pluginState.isActive = false;
+    removeIrcListeners();
+
+    emit('setHeight', null);
+
+    if (api.value) {
+        api.value.dispose();
+    }
+});
 </script>
 
 <style lang="scss">

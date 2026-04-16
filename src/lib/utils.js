@@ -9,12 +9,12 @@ function base36Encode(binary) {
     }
 
     while (bytes.length > 0) {
-        let quotient = [];
+        const quotient = [];
         let remainder = 0;
 
         for (let i = bytes.length - 1; i >= 0; i--) {
-            let accumulator = bytes[i] + remainder * 256;
-            let digit = Math.floor(accumulator / 36);
+            const accumulator = bytes[i] + remainder * 256;
+            const digit = Math.floor(accumulator / 36);
             remainder = accumulator % 36;
             if (quotient.length > 0 || digit > 0) {
                 quotient.unshift(digit);

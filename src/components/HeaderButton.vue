@@ -10,50 +10,42 @@
     </div>
 </template>
 
-<script>
+<script setup>
 /* global kiwi:true */
+import { ref, computed } from 'vue';
 import JitsiMediaView from './JitsiMediaView.vue';
 import * as config from '../config.js';
 
-export default {
-    props: ['network', 'buffer', 'sidebarState', 'pluginState'],
-    data() {
-        return {
-            closePrompt: false,
-        };
-    },
-    computed: {
-        showButton() {
-            return config.isAllowedBuffer(this.buffer);
-        },
-        buttonIcon() {
-            return config.setting('buttonIcon');
-        },
-    },
-    methods: {
-        openConference() {
-            if (!this.pluginState.isActive) {
-                this.pluginState.isActive = true;
-                kiwi.emit('mediaviewer.show', {
-                    component: JitsiMediaView,
-                    componentProps: {
-                        pluginState: this.pluginState,
-                        buffer: this.buffer,
-                    },
-                });
-                return;
-            }
+const props = defineProps(['network', 'buffer', 'sidebarState', 'pluginState']);
 
-            this.closePrompt = true;
-        },
-        closeConference() {
-            kiwi.emit('mediaviewer.hide');
-        },
-        hideToast() {
-            this.closePrompt = false;
-        },
-    },
-};
+const closePrompt = ref(false);
+
+const showButton = computed(() => config.isAllowedBuffer(props.buffer));
+const buttonIcon = computed(() => config.setting('buttonIcon'));
+
+function openConference() {
+    if (!props.pluginState.isActive) {
+        props.pluginState.isActive = true;
+        kiwi.emit('mediaviewer.show', {
+            component: JitsiMediaView,
+            componentProps: {
+                pluginState: props.pluginState,
+                buffer: props.buffer,
+            },
+        });
+        return;
+    }
+
+    closePrompt.value = true;
+}
+
+function closeConference() {
+    kiwi.emit('mediaviewer.hide');
+}
+
+function hideToast() {
+    closePrompt.value = false;
+}
 </script>
 
 <style lang="scss">

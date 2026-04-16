@@ -21,7 +21,7 @@ module.exports.getCommitHash = () => {
 module.exports.getNetworkIPs = () => {
     const interfaces = os.networkInterfaces();
     const ips = [];
-    /* eslint-disable no-restricted-syntax */
+
     for (const iface of Object.values(interfaces)) {
         for (const alias of iface) {
             if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
@@ -55,9 +55,9 @@ module.exports.GiB = 1073741824;
  * http://processing.org/reference/map_.html
  */
 module.exports.mapRange = (value, vMin, vMax, dMin, dMax) => {
-    let vValue = parseFloat(value);
-    let vRange = vMax - vMin;
-    let dRange = dMax - dMin;
+    const vValue = parseFloat(value);
+    const vRange = vMax - vMin;
+    const dRange = dMax - dMin;
 
     return (vValue - vMin) * dRange / vRange + dMin;
 };

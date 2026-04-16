@@ -10,53 +10,44 @@
     </div>
 </template>
 
-<script>
-
+<script setup>
 /* global kiwi:true */
+import { computed } from 'vue';
 import JitsiMediaView from './JitsiMediaView.vue';
 import * as config from '../config.js';
 
-export default {
-    props: ['buffer', 'message', 'idx', 'ml', 'pluginState', 'inviteState'],
-    computed: {
-        nicks() {
-            let maxLength = config.setting('maxParticipantsLength');
-            let showNicks = [];
-            let length = 0;
-            for (let i = 0; i < this.inviteState.members.length; i++) {
-                let nick = this.inviteState.members[i];
-                length += nick.length;
-                if (length > maxLength) {
-                    showNicks.push(config.setting('participantsMore'));
-                    break;
-                }
-                showNicks.push(nick);
-            }
-            return showNicks;
+const props = defineProps(['buffer', 'message', 'idx', 'ml', 'pluginState', 'inviteState']);
+
+const nicks = computed(() => {
+    const maxLength = config.setting('maxParticipantsLength');
+    const showNicks = [];
+    let length = 0;
+    for (let i = 0; i < props.inviteState.members.length; i++) {
+        const nick = props.inviteState.members[i];
+        length += nick.length;
+        if (length > maxLength) {
+            showNicks.push(config.setting('participantsMore'));
+            break;
+        }
+        showNicks.push(nick);
+    }
+    return showNicks;
+});
+
+const joinButtonText = computed(() => config.setting('joinButtonText'));
+const inviteText = computed(() => config.setting('inviteText').replace('{{ nick }}', nicks.value.join(', ')));
+const joinText = computed(() => config.setting('joinText').replace('{{ nick }}', nicks.value.join(', ')));
+
+function openJitsi() {
+    props.pluginState.isActive = true;
+    kiwi.emit('mediaviewer.show', {
+        component: JitsiMediaView,
+        componentProps: {
+            pluginState: props.pluginState,
+            buffer: props.buffer,
         },
-        joinButtonText() {
-            return config.setting('joinButtonText');
-        },
-        inviteText() {
-            return config.setting('inviteText').replace('{{ nick }}', this.nicks.join(', '));
-        },
-        joinText() {
-            return config.setting('joinText').replace('{{ nick }}', this.nicks.join(', '));
-        },
-    },
-    methods: {
-        openJitsi() {
-            this.pluginState.isActive = true;
-            kiwi.emit('mediaviewer.show', {
-                component: JitsiMediaView,
-                componentProps: {
-                    pluginState: this.pluginState,
-                    buffer: this.buffer,
-                },
-            });
-        },
-    },
-};
+    });
+}
 </script>
 
 <style>

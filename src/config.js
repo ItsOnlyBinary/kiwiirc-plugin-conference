@@ -1,7 +1,7 @@
 /* global kiwi:true */
 
-let configBase = 'conference';
-let defaultConfig = {
+const configBase = 'conference';
+const defaultConfig = {
     tagID: 1,
     secure: false,
     server: 'meet.jit.si',
@@ -87,7 +87,7 @@ export function isAllowedBuffer(buffer) {
     if (buffer.isQuery()) {
         return true;
     }
-    let enabledChannels = getSetting('enabledInChannels');
+    const enabledChannels = getSetting('enabledInChannels');
     if (enabledChannels.indexOf('*') > -1) {
         return true;
     }
