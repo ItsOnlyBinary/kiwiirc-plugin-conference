@@ -1,6 +1,5 @@
 <template>
     <div class="p-conference-jitsi">
-        <div v-if="isJoined" class="p-conference-overlay">{{ roomName }} @ {{ network.name }}</div>
         <div v-if="isLoading" class="p-conference-loading">
             <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
                 <g>
@@ -35,8 +34,6 @@ import platform from 'platform';
 import * as config from '../config.js';
 import * as utils from '../lib/utils.js';
 
-const MAX_RECONNECT_ATTEMPTS = 3;
-
 export default {
     props: ['componentProps'],
     data() {
@@ -47,7 +44,6 @@ export default {
             encodedRoomName: '',
             isJoined: false,
             isLoading: false,
-            loadingAnimation: null,
             notSupported: false,
         };
     },
@@ -73,6 +69,7 @@ export default {
             return;
         }
 
+        this.setupIrcListeners();
         this.isLoading = true;
 
         if (config.setting('secure')) {
@@ -95,9 +92,7 @@ export default {
     },
     beforeDestroy() {
         this.componentProps.pluginState.isActive = false;
-        clearTimeout(this.reconnectTimeout);
-        // prevent any pending reconnect from proceeding after destroy
-        this.reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+        this.removeIrcListeners();
 
         let mediaviewer = this.$el.parentElement;
         if (mediaviewer) {
@@ -109,6 +104,47 @@ export default {
         }
     },
     methods: {
+        setupIrcListeners() {
+            const channelMatches = (event) => event.channel.toLowerCase() === this.buffer.name.toLowerCase();
+            const isOwnNick = (nick) => nick.toLowerCase() === this.network.nick.toLowerCase();
+            const networkMatches = (network) => network === this.network;
+
+            this.ircPartHandler = (event, network, ircEventObj) => {
+                if (!networkMatches(network) || this.buffer.isQuery()) {
+                    return;
+                }
+                if (channelMatches(event) && isOwnNick(event.nick)) {
+                    kiwi.emit('mediaviewer.hide');
+                }
+            };
+
+            this.ircQuitHandler = (event, network, ircEventObj) => {
+                if (!networkMatches(network)) {
+                    return;
+                }
+                if (isOwnNick(event.nick)) {
+                    kiwi.emit('mediaviewer.hide');
+                }
+            };
+
+            this.ircKickHandler = (event, network, ircEventObj) => {
+                if (!networkMatches(network) || this.buffer.isQuery()) {
+                    return;
+                }
+                if (channelMatches(event) && isOwnNick(event.kicked)) {
+                    kiwi.emit('mediaviewer.hide');
+                }
+            };
+
+            kiwi.on('irc.part', this.ircPartHandler);
+            kiwi.on('irc.quit', this.ircQuitHandler);
+            kiwi.on('irc.kick', this.ircKickHandler);
+        },
+        removeIrcListeners() {
+            kiwi.off('irc.part', this.ircPartHandler);
+            kiwi.off('irc.quit', this.ircQuitHandler);
+            kiwi.off('irc.kick', this.ircKickHandler);
+        },
         fetchToken() {
             return new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => {
@@ -124,8 +160,7 @@ export default {
                         token += message.params[2];
                         clearTimeout(timeout);
                         kiwi.off('irc.raw.EXTJWT', handler);
-                        setTimeout(() => resolve(token), 60000);
-                        // resolve(token);
+                        resolve(token);
                     }
                 };
 
@@ -154,7 +189,14 @@ export default {
             this.$el.appendChild(scr);
         },
         scriptLoaded() {
-            let configOverwrite = config.setting('configOverwrite');
+            let configOverwrite = {
+                disableTileView: true,
+                disableTileEnlargement: true,
+            };
+
+            Object.assign(configOverwrite, config.setting('configOverwrite'));
+
+            configOverwrite.subject = `${this.roomName} @ ${this.network.name}`;
 
             // Disable prejoin page as we are setting the users nick
             configOverwrite.prejoinPageEnabled = false;
@@ -179,19 +221,16 @@ export default {
                     this.api.executeCommand('toggleTileView');
 
                     this.api.addEventListener('videoConferenceJoined', () => {
-                        const isReconnect = this.reconnectAttempts > 0;
                         this.isJoined = true;
                         this.isLoading = false;
-                        this.reconnectAttempts = 0;
 
-                        if (!isReconnect && (!config.setting('showLink') || this.link)) {
+                        if (!config.setting('showLink') || this.link) {
                             this.sendJoinMessage();
                         }
                     });
 
                     this.api.addEventListener('videoConferenceLeft', () => {
-                        console.log('Left Conference');
-                        // kiwi.emit('mediaviewer.hide');
+                        kiwi.emit('mediaviewer.hide');
                     });
 
                     this.api.once('browserSupport', (event) => {
@@ -209,8 +248,13 @@ export default {
                         if (event?.error?.message === 'Token expired') {
                             this.api.dispose();
                             this.api = null;
-                            this.token = await this.fetchToken();
-                            this.scriptLoaded();
+                            try {
+                                this.token = await this.fetchToken();
+                                this.scriptLoaded();
+                            } catch (e) {
+                                this.addLocalMessage('Conference: failed to re-authenticate');
+                                kiwi.emit('mediaviewer.hide');
+                            }
                         } else {
                             this.addLocalMessage('plugin-conference error: ' + event.error.message);
                         }
@@ -290,16 +334,6 @@ export default {
 
     /* fixes firefox showing scrollbar */
     overflow: hidden;
-}
-
-.p-conference-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 10;
-    padding: 6px 6px 2px 6px;
-    color: #fff;
-    background-color: rgba(0, 0, 0, 0.2);
 }
 
 .p-conference-loading {
