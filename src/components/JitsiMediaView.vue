@@ -243,7 +243,7 @@ function scriptLoaded() {
         getLink();
     }
 
-    const user = this.network.currentUser();
+    const user = network.value.currentUser();
     const domain = config.setting('server');
     const options = {
         roomName: encodedRoomName.value,
