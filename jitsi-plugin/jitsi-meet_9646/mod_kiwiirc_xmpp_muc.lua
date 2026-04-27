@@ -64,9 +64,9 @@ module:hook("muc-occupant-pre-join", function(event)
     end
 
     local user_nick = origin.jitsi_meet_context_user and origin.jitsi_meet_context_user.name;
-    local iss = origin.jitsi_meet_issuer;
+    local app_id = module:get_option_string("app_id");
 
-    if not user_nick or not iss then
+    if not user_nick or not app_id then
         return;
     end
 
@@ -80,7 +80,7 @@ module:hook("muc-occupant-pre-join", function(event)
     local nicks = { user_nick, peer_nick };
     table.sort(nicks);
     local sorted_pair = nicks[1] .. "+" .. nicks[2];
-    local expected_node = "q-" .. kiwi_util.encode_room_name(iss, sorted_pair);
+    local expected_node = "q-" .. kiwi_util.encode_room_name(app_id, sorted_pair);
 
     if room_node ~= expected_node then
         module:log("warn", "query room join rejected: '%s' claimed peer '%s' but room '%s' ~= expected '%s'",

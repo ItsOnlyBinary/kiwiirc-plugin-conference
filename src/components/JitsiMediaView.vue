@@ -307,7 +307,8 @@ function scriptLoaded() {
 }
 
 function scriptLoad() {
-    const roomNamePromise = utils.encodeRoomName(network.value.connection.server + '/' + roomName.value);
+    const appId = config.setting('appId') || network.value.connection.server;
+    const roomNamePromise = utils.encodeRoomName(appId + '/' + roomName.value);
     scr = document.createElement('script');
     scr.src = 'https://' + config.setting('server') + '/external_api.js';
     scr.onload = async () => {

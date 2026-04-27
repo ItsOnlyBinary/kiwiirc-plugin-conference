@@ -384,8 +384,8 @@ function Util:process_and_verify_token(session)
 
         if self.requireRoomClaim then
             if claims["channel"] ~= nil then
-                claims["room"] = kiwi_util.encode_room_name(claims["iss"], claims["channel"])
-                module:log("debug", "room encoded from '%s/%s' to '%s'", claims["iss"], claims["channel"], claims["room"]);
+                claims["room"] = kiwi_util.encode_room_name(self.appId, claims["channel"])
+                module:log("debug", "room encoded from '%s/%s' to '%s'", self.appId, claims["channel"], claims["room"]);
             else
                 claims["room"] = "*";
                 module:log("debug", "room maybe query");

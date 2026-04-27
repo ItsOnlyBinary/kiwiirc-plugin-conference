@@ -5,6 +5,7 @@ const defaultConfig = {
     tagID: 1,
     secure: false,
     server: '',
+    appId: '',
     queries: true,
     channels: true,
     buttonIcon: 'fa-phone',
