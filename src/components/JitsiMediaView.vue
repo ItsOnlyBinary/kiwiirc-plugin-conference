@@ -245,6 +245,14 @@ function scriptLoaded() {
 
     const user = network.value.currentUser();
     const domain = config.setting('server');
+
+    // eslint-disable-next-line no-console
+    console.log('Avatar URL:', user.avatar?.large || user.avatar?.small);
+    // eslint-disable-next-line no-console
+    console.log('User avatar object:', user.avatar);
+    // eslint-disable-next-line no-console
+    console.log('USER FULL:', user);
+
     const options = {
         roomName: encodedRoomName.value,
         userInfo: {
@@ -261,12 +269,14 @@ function scriptLoaded() {
             api.value.addEventListener('videoConferenceJoined', () => {
                 isJoined.value = true;
                 isLoading.value = false;
-
+                const avatar = user?.avatar?.large || user?.avatar?.small;
+                if (avatar) {
+                    api.value.executeCommand('avatarUrl', avatar);
+                }
                 if (!config.setting('showLink') || link.value) {
                     sendJoinMessage();
                 }
             });
-
             api.value.addEventListener('videoConferenceLeft', () => {
                 kiwi.emit('mediaviewer.hide');
             });

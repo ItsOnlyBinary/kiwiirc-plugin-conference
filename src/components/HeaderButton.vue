@@ -5,7 +5,7 @@
             <input-confirm :flip-connotation="true" @ok="closeConference()" @submit="hideToast()" />
         </div>
         <div role="button" :title="buttonLabel" @click="openConference()">
-            <a :aria-label="buttonLabel"><i aria-hidden="true" :class="buttonIcon" class="fa" /></a>
+            <a :aria-label="buttonLabel"><i aria-hidden="true" :class="buttonIcon" class="fa" /><span>VRoom</span></a>
         </div>
     </div>
 </template>

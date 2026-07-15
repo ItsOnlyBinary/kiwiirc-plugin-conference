@@ -1,7 +1,11 @@
 <template>
     <div class="plugin-conference-join">
         <div class="plugin-conference-jointext">
-            {{ buffer.isQuery() ? inviteText : joinText }}
+            {{
+                buffer.isQuery()
+                    ? (pluginState.isActive ? joinText : inviteText)
+                    : joinText
+            }}
         </div>
         <div v-if="!pluginState.isActive" class="u-button u-button-primary" role="button" @click="openJitsi()">
             <i aria-hidden="true" class="fa fa-phone" />
